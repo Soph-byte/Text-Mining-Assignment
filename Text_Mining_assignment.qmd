@@ -4,20 +4,313 @@ format: html
 editor: visual
 ---
 
-## Quarto
+## Libraries
 
 
 ```{r}
 library(readr)
-
+library(tidyverse)
+library(tidytext)
+library(topicmodels)
+library(tm)
+library(quanteda)
+library(widyr)
 
 
 ```
-
-You can add options to executable code like this
+We analyze song lyrics from 1950-2020 to see if themes have changed.
 
 ```{r}
 df <- read_csv("tcc_ceds_music.csv")
 ```
 
-The `echo: false` option disables the printing of code (only output is displayed).
+
+```{r}
+head(df)
+
+colnames(df)
+
+
+df %>% duplicated() %>% sum()
+
+df %>% summarise_all(~sum(is.na(.)))
+
+```
+
+
+
+
+
+
+```{r}
+
+df %>%
+  count(release_date) %>%
+  ggplot(aes(x = release_date, y = n)) +
+  geom_col(fill = "steelblue") +
+  labs(title = "Number of Songs per Year",
+       x = "Year", y = "Number of Songs") +
+  theme_minimal()
+
+
+```
+
+
+
+```{r}
+
+df %>%
+  count(artist_name, sort = TRUE) %>%
+  top_n(10) %>%
+  ggplot(aes(x = reorder(artist_name, n), y = n)) +
+  geom_col(fill = "tomato") +
+  coord_flip() +
+  labs(title = "Top 10 Artists",
+       x = NULL, y = "Number of Songs") +
+  theme_minimal()
+
+
+```
+
+
+
+
+```{r}
+
+df <- df %>%
+  mutate(decade = floor(release_date / 10) * 10)
+
+
+df %>%
+  select(release_date, decade) %>%
+  sample_n(5)
+
+
+df %>%
+  count(decade) %>%
+  ggplot(aes(x = decade, y = n)) +
+  geom_col(fill = "steelblue") +
+  labs(title = "Number of Songs per Decade",
+       x = "Decade",
+       y = "Number of Songs")
+
+
+```
+
+
+
+
+```{r}
+
+lyrics_words <- df %>%
+  unnest_tokens(word, lyrics) %>%  
+  anti_join(stop_words)
+
+sentiment_by_decade <- lyrics_words %>%
+  inner_join(get_sentiments("bing")) %>%
+  group_by(decade, sentiment) %>%
+  count() %>%
+  pivot_wider(names_from = sentiment, values_from = n, values_fill = 0) %>%
+  mutate(sentiment_score = positive - negative)
+
+# Plot
+ggplot(sentiment_by_decade, aes(x = decade, y = sentiment_score)) +
+  geom_col(fill = "darkgreen") +
+  labs(title = "Net Sentiment per Decade",
+       y = "Sentiment Score (pos - neg)")
+
+
+
+```
+
+
+
+
+```{r}
+nrc_emotions <- lyrics_words %>%
+  inner_join(get_sentiments("nrc")) %>%
+  count(decade, sentiment) %>%
+  filter(sentiment %in% c("anger", "joy", "fear", "trust", "sadness"))
+
+# Plot
+ggplot(nrc_emotions, aes(x = decade, y = n, fill = sentiment)) +
+  geom_col(position = "dodge") +
+  labs(title = "Emotions per Decade (nrc)",
+       y = "Count",
+       x = "Decade")
+
+
+```
+
+
+```{r}
+bing_ratio <- lyrics_words %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(decade, sentiment) %>%
+  pivot_wider(names_from = sentiment, values_from = n, values_fill = 1) %>%
+  mutate(ratio = positive / negative)
+
+ggplot(bing_ratio, aes(x = decade, y = ratio)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Positive-to-Negative Ratio per Decade",
+       y = "Ratio (Positive / Negative)")
+
+
+
+```
+
+
+```{r}
+library(wordcloud)
+
+lyrics_words %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  with(wordcloud(word, n, max.words = 100, random.order = FALSE, colors = c("red", "green")))
+
+
+```
+
+
+```{r}
+
+word_counts <- df %>%
+  unnest_tokens(word, lyrics) %>%
+  anti_join(stop_words) %>%
+  count(decade, word, sort = TRUE)
+
+
+dtm <- word_counts %>%
+  cast_dtm(decade, word, n)
+
+
+
+```
+
+
+```{r}
+
+
+# LDA anwenden (z.B. 4 Themen, kannst du anpassen)
+lda_model <- LDA(dtm, k = 4, control = list(seed = 1234))
+
+
+```
+
+
+
+
+```{r}
+library(ggplot2)
+library(tidytext)
+
+# Beta-Tabelle: Wahrscheinlichkeit eines Wortes pro Topic
+lda_topics <- tidy(lda_model)
+
+# Top-Wörter je Topic
+top_terms <- lda_topics %>%
+  group_by(topic) %>%
+  slice_max(beta, n = 10) %>%
+  ungroup() %>%
+  arrange(topic, -beta)
+
+# Plot
+top_terms %>%
+  mutate(term = reorder_within(term, beta, topic)) %>%
+  ggplot(aes(beta, term, fill = as.factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ topic, scales = "free") +
+  scale_y_reordered() +
+  labs(
+    title = "Top Words per Topic (LDA)",
+    x = "Beta (Word Importance in Topic)",
+    y = NULL
+  )
+
+
+```
+```{r}
+
+
+# 1. Wahrscheinlichkeiten (gamma) für jedes Dokument (Song) extrahieren
+gamma_df <- tidy(lda_model, matrix = "gamma")  # lda_model = dein LDA-Modell
+
+# 2. release_date hinzufügen (damit wir Jahrzehnte analysieren können)
+# Angenommen deine tidy DTM heißt `lyrics_dtm`
+# und du hast eine Spalte `release_date` im Original-Dataframe df
+
+doc_info <- df %>%
+  mutate(document = row_number(),              # muss zur Reihenfolge im DTM passen!
+         decade = floor(release_date / 10) * 10) %>%
+  select(document, decade)
+
+# 3. Gamma-Werte mit Jahrzehnten verbinden
+gamma_decade <- gamma_df %>%
+  mutate(document = as.integer(document)) %>%
+  left_join(doc_info, by = "document")
+
+# 4. Durchschnittliche Themenverteilung pro Dekade berechnen
+topic_by_decade <- gamma_decade %>%
+  group_by(decade, topic) %>%
+  summarize(mean_gamma = mean(gamma), .groups = "drop")
+
+# 5. Plot: Thema-Verteilung pro Dekade
+ggplot(topic_by_decade, aes(x = decade, y = mean_gamma, fill = factor(topic))) +
+  geom_col(position = "dodge") +
+  labs(title = "Topic Prevalence per Decade",
+       x = "Decade",
+       y = "Average Gamma (Topic Proportion)",
+       fill = "Topic") +
+  theme_minimal()
+
+```
+```{r}
+library(tidytext)
+library(dplyr)
+
+df <- df %>%
+  mutate(song_id = row_number(),
+         decade = floor(as.numeric(release_date) / 10) * 10)
+
+# Tokenisierung + Stopwords entfernen
+lyrics_words <- df %>%
+  unnest_tokens(word, lyrics) %>%
+  anti_join(stop_words)
+
+# DTM mit einem Dokument pro Song
+lyrics_dtm <- lyrics_words %>%
+  count(song_id, word) %>%
+  cast_dtm(song_id, word, n)
+
+
+
+```
+
+```{r}
+library(topicmodels)
+lyrics_lda <- LDA(lyrics_dtm, k = 4, control = list(seed = 1234))
+
+```
+
+
+```{r}
+gamma_df <- tidy(lyrics_lda, matrix = "gamma") %>%
+  mutate(song_id = as.integer(document)) %>%
+  left_join(df %>% select(song_id, decade), by = "song_id")
+
+```
+
+
+```{r}
+gamma_df %>%
+  group_by(decade, topic) %>%
+  summarise(avg_gamma = mean(gamma)) %>%
+  ggplot(aes(x = decade, y = avg_gamma, fill = as.factor(topic))) +
+  geom_col(position = "dodge") +
+  labs(title = "Topic Prevalence per Decade",
+       x = "Decade", y = "Average Gamma (Topic Proportion)", fill = "Topic")
+
+
+```
+
