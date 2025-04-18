@@ -6,7 +6,6 @@ editor: visual
 
 ## Libraries
 
-
 ```{r}
 library(readr)
 library(tidyverse)
@@ -18,12 +17,12 @@ library(widyr)
 
 
 ```
+
 We analyze song lyrics from 1950-2020 to see if themes have changed.
 
 ```{r}
 df <- read_csv("tcc_ceds_music.csv")
 ```
-
 
 ```{r}
 head(df)
@@ -31,86 +30,67 @@ head(df)
 colnames(df)
 
 
-df %>% duplicated() %>% sum()
+df |>  duplicated() |>  sum()
 
-df %>% summarise_all(~sum(is.na(.)))
-
+df |>  summarise_all(~sum(is.na(.)))
 ```
-
-
-
-
-
 
 ```{r}
 
-df %>%
-  count(release_date) %>%
+df |> 
+  count(release_date) |> 
   ggplot(aes(x = release_date, y = n)) +
   geom_col(fill = "steelblue") +
   labs(title = "Number of Songs per Year",
        x = "Year", y = "Number of Songs") +
   theme_minimal()
-
-
 ```
-
-
 
 ```{r}
 
-df %>%
-  count(artist_name, sort = TRUE) %>%
-  top_n(10) %>%
+df |> 
+  count(artist_name, sort = TRUE) |> 
+  top_n(10) |> 
   ggplot(aes(x = reorder(artist_name, n), y = n)) +
   geom_col(fill = "tomato") +
   coord_flip() +
   labs(title = "Top 10 Artists",
        x = NULL, y = "Number of Songs") +
   theme_minimal()
-
-
 ```
-
-
-
 
 ```{r}
 
-df <- df %>%
+df <- df |> 
   mutate(decade = floor(release_date / 10) * 10)
 
 
-df %>%
+df |> 
   select(release_date, decade) %>%
   sample_n(5)
 
 
-df %>%
-  count(decade) %>%
+df |> 
+  count(decade) |> 
   ggplot(aes(x = decade, y = n)) +
   geom_col(fill = "steelblue") +
   labs(title = "Number of Songs per Decade",
        x = "Decade",
        y = "Number of Songs")
 
-
 ```
-
-
-
 
 ```{r}
 
-lyrics_words <- df %>%
-  unnest_tokens(word, lyrics) %>%  
+lyrics_words <- df |> 
+  unnest_tokens(word, lyrics) |> 
   anti_join(stop_words)
 
-sentiment_by_decade <- lyrics_words %>%
-  inner_join(get_sentiments("bing")) %>%
+sentiment_by_decade <- lyrics_words |> 
+  inner_join(get_sentiments("bing")) |> 
   group_by(decade, sentiment) %>%
-  count() %>%
-  pivot_wider(names_from = sentiment, values_from = n, values_fill = 0) %>%
+  count() |> 
+  pivot_wider(names_from = sentiment, values_from = n, values_fill = 0) |> 
   mutate(sentiment_score = positive - negative)
 
 # Plot
@@ -119,17 +99,11 @@ ggplot(sentiment_by_decade, aes(x = decade, y = sentiment_score)) +
   labs(title = "Net Sentiment per Decade",
        y = "Sentiment Score (pos - neg)")
 
-
-
 ```
-
-
-
-
 ```{r}
-nrc_emotions <- lyrics_words %>%
-  inner_join(get_sentiments("nrc")) %>%
-  count(decade, sentiment) %>%
+nrc_emotions <- lyrics_words |> 
+  inner_join(get_sentiments("nrc")) |> 
+  count(decade, sentiment) |> 
   filter(sentiment %in% c("anger", "joy", "fear", "trust", "sadness"))
 
 # Plot
@@ -140,6 +114,71 @@ ggplot(nrc_emotions, aes(x = decade, y = n, fill = sentiment)) +
        x = "Decade")
 
 
+```
+```{r}
+nrc_joy <- get_sentiments("nrc") |> 
+  filter(sentiment == "joy")
+
+joy_words_by_decade <- lyrics_words %>%
+  inner_join(nrc_joy, by = "word") %>%
+  count(decade, word, sort = TRUE)
+
+joy_words_by_decade |> 
+  group_by(decade) |> 
+  top_n(10, n) |>  
+  ungroup() |> 
+  ggplot(aes(x = reorder_within(word, n, decade), y = n, fill = factor(decade))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ decade, scales = "free_y") +
+  scale_x_reordered() +
+  coord_flip() +
+  labs(title = "Words associated with 'joy' by decade",
+     x = "Word",
+     y = "Frequency")
+```
+
+```{r}
+nrc_anger <- get_sentiments("nrc") |> 
+  filter(sentiment == "anger")
+
+anger_words_by_decade <- lyrics_words %>%
+  inner_join(nrc_anger, by = "word") %>%
+  count(decade, word, sort = TRUE)
+
+anger_words_by_decade |> 
+  group_by(decade) |> 
+  top_n(10, n) |>  
+  ungroup() |> 
+  ggplot(aes(x = reorder_within(word, n, decade), y = n, fill = factor(decade))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ decade, scales = "free_y") +
+  scale_x_reordered() +
+  coord_flip() +
+  labs(title = "Words associated with 'anger' by decade",
+     x = "Word",
+     y = "Frequency")
+```
+
+```{r}
+nrc_sadness <- get_sentiments("nrc") |> 
+  filter(sentiment == "sadness")
+
+sadness_words_by_decade <- lyrics_words %>%
+  inner_join(nrc_sadness, by = "word") %>%
+  count(decade, word, sort = TRUE)
+
+sadness_words_by_decade |> 
+  group_by(decade) |> 
+  top_n(10, n) |>  
+  ungroup() |> 
+  ggplot(aes(x = reorder_within(word, n, decade), y = n, fill = factor(decade))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ decade, scales = "free_y") +
+  scale_x_reordered() +
+  coord_flip() +
+  labs(title = "Words associated with 'sadness' by decade",
+     x = "Word",
+     y = "Frequency")
 ```
 
 
@@ -155,21 +194,65 @@ ggplot(bing_ratio, aes(x = decade, y = ratio)) +
   geom_point() +
   labs(title = "Positive-to-Negative Ratio per Decade",
        y = "Ratio (Positive / Negative)")
-
-
-
 ```
-
 
 ```{r}
 library(wordcloud)
-
+#general
 lyrics_words %>%
   inner_join(get_sentiments("bing")) %>%
   count(word, sentiment, sort = TRUE) %>%
   with(wordcloud(word, n, max.words = 100, random.order = FALSE, colors = c("red", "green")))
+```
 
 
+```{r}
+#by decade
+sentiment_by_decade <- lyrics_words %>%
+  inner_join(get_sentiments("bing"), by = "word") %>%
+  count(decade, word, sentiment, sort = TRUE)
+
+split_data <- split(sentiment_by_decade, sentiment_by_decade$decade)
+
+# Crear un wordcloud por cada década, en su propia ventana
+for (dec in names(split_data)) {
+  data <- split_data[[dec]]
+  
+
+  dev.new(width = 8, height = 6)  
+  
+  with(data,
+       wordcloud(words = word,
+                 freq = n,
+                 max.words = 100,
+                 random.order = FALSE,
+                 colors = ifelse(sentiment == "positive", "green", "red"))
+  )
+  title(main = paste("Wordcloud – Decade", dec), line = -1)
+}
+
+```
+# Term Frequency
+
+```{r}
+total_words <- lyrics_words %>% 
+  group_by(decade) %>% 
+  summarize(total = sum(n()))
+
+total_words
+```
+
+```{r}
+song_words <- left_join(lyrics_words, total_words)
+```
+```{r}
+song_words <- song_words %>%
+  mutate(term_frequency = n()/total)
+```
+
+```{r}
+ggplot(song_words, aes(term_frequency)) +
+  geom_histogram(show.legend = TRUE) 
 ```
 
 
@@ -183,11 +266,7 @@ word_counts <- df %>%
 
 dtm <- word_counts %>%
   cast_dtm(decade, word, n)
-
-
-
 ```
-
 
 ```{r}
 
@@ -197,9 +276,6 @@ lda_model <- LDA(dtm, k = 4, control = list(seed = 1234))
 
 
 ```
-
-
-
 
 ```{r}
 library(ggplot2)
@@ -230,6 +306,7 @@ top_terms %>%
 
 
 ```
+
 ```{r}
 
 
@@ -265,6 +342,7 @@ ggplot(topic_by_decade, aes(x = decade, y = mean_gamma, fill = factor(topic))) +
   theme_minimal()
 
 ```
+
 ```{r}
 library(tidytext)
 library(dplyr)
@@ -293,14 +371,12 @@ lyrics_lda <- LDA(lyrics_dtm, k = 4, control = list(seed = 1234))
 
 ```
 
-
 ```{r}
 gamma_df <- tidy(lyrics_lda, matrix = "gamma") %>%
   mutate(song_id = as.integer(document)) %>%
   left_join(df %>% select(song_id, decade), by = "song_id")
 
 ```
-
 
 ```{r}
 gamma_df %>%
@@ -313,4 +389,3 @@ gamma_df %>%
 
 
 ```
-
