@@ -62,7 +62,7 @@ df |>
 ```{r}
 
 df <- df |> 
-  mutate(decade = floor(release_date / 10) * 10)
+  mutate(decade = floor(release_date / 10) * 10) 
 
 
 df |> 
@@ -81,11 +81,42 @@ df |>
 ```
 
 ```{r}
-
 lyrics_words <- df |> 
   unnest_tokens(word, lyrics) |> 
-  anti_join(stop_words)
+  anti_join(stop_words) |> 
+  rename(song_id = "...1")
+```
 
+```{r}
+#general count
+lyrics_words %>%
+  count(decade, word, sort = TRUE) %>%
+  group_by(decade) %>%
+  slice_max(n, n = 10) %>%
+  ggplot(aes(reorder_within(word, n, decade), n, fill = decade)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~decade, scales = "free") +
+  scale_x_reordered() +
+  coord_flip()
+```
+are the songs longer nowadays?
+```{r}
+lyrics_stats <- lyrics_words %>%
+  group_by(song_id, decade) %>%
+  summarise(total_words = n()) %>%
+  group_by(decade) %>%
+  summarise(mean_length = mean(total_words))
+
+ggplot(lyrics_stats, aes(x = decade, y = mean_length)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Average lyric length by decade")
+```
+
+
+# Sentimental Analysis
+
+```{r}
 sentiment_by_decade <- lyrics_words |> 
   inner_join(get_sentiments("bing")) |> 
   group_by(decade, sentiment) %>%
@@ -100,6 +131,7 @@ ggplot(sentiment_by_decade, aes(x = decade, y = sentiment_score)) +
        y = "Sentiment Score (pos - neg)")
 
 ```
+
 ```{r}
 nrc_emotions <- lyrics_words |> 
   inner_join(get_sentiments("nrc")) |> 
@@ -115,6 +147,7 @@ ggplot(nrc_emotions, aes(x = decade, y = n, fill = sentiment)) +
 
 
 ```
+
 ```{r}
 nrc_joy <- get_sentiments("nrc") |> 
   filter(sentiment == "joy")
@@ -181,7 +214,6 @@ sadness_words_by_decade |>
      y = "Frequency")
 ```
 
-
 ```{r}
 bing_ratio <- lyrics_words %>%
   inner_join(get_sentiments("bing")) %>%
@@ -205,7 +237,6 @@ lyrics_words %>%
   with(wordcloud(word, n, max.words = 100, random.order = FALSE, colors = c("red", "green")))
 ```
 
-
 ```{r}
 #by decade
 sentiment_by_decade <- lyrics_words %>%
@@ -214,7 +245,7 @@ sentiment_by_decade <- lyrics_words %>%
 
 split_data <- split(sentiment_by_decade, sentiment_by_decade$decade)
 
-# Crear un wordcloud por cada década, en su propia ventana
+
 for (dec in names(split_data)) {
   data <- split_data[[dec]]
   
@@ -232,6 +263,7 @@ for (dec in names(split_data)) {
 }
 
 ```
+
 # Term Frequency
 
 ```{r}
@@ -245,6 +277,7 @@ total_words
 ```{r}
 song_words <- left_join(lyrics_words, total_words)
 ```
+
 ```{r}
 song_words <- song_words %>%
   mutate(term_frequency = n()/total)
@@ -255,26 +288,242 @@ ggplot(song_words, aes(term_frequency)) +
   geom_histogram(show.legend = TRUE) 
 ```
 
+```{r}
+freq_by_rank <- song_words |> 
+  group_by(decade) |>  
+  mutate(rank = row_number()) %>%
+  ungroup()
+```
 
 ```{r}
+freq_by_rank |> 
+  ggplot(aes(rank, term_frequency, color = decade)) + 
+  geom_line(size = 1.1, alpha = 0.8, show.legend = FALSE) + 
+  scale_x_log10() +
+  scale_y_log10()
+```
 
-word_counts <- df %>%
-  unnest_tokens(word, lyrics) %>%
-  anti_join(stop_words) %>%
+lol!!!!!!!!!!
+
+# N-GRAMS
+
+```{r}
+songs_bigrams <- df |> 
+  unnest_tokens(bigram, lyrics, token = "ngrams", n = 2) %>%
+  filter(!is.na(bigram))
+
+songs_bigrams
+```
+
+We can use count to examine the most frequent bigrams:
+
+```{r}
+songs_bigrams |> 
+  count(bigram, sort = TRUE)
+```
+
+take into account: a lot of repeated words (???) ----\> no se yo que hariais pero yo alomejor intentaria eliminar el hecho de que dos palabras salieran unidas no se
+
+Stopwords:
+
+```{r}
+bigrams_separated <- songs_bigrams %>%
+  separate(bigram, c("word1", "word2"), sep = " ")
+
+bigrams_separated
+```
+
+```{r}
+bigrams_filtered <- bigrams_separated |> 
+  filter(!word1 %in% stop_words$word) |> 
+  filter(!word2 %in% stop_words$word)
+
+bigrams_filtered
+```
+
+```{r}
+bigrams_united <- bigrams_filtered 
+  unite(bigram, word1, word2, sep = " ")
+
+bigrams_united
+```
+
+## Analysis
+
+```{r}
+bigram_counts_decade <- bigrams_united %>% 
+  count(decade, bigram, sort = TRUE)
+
+bigram_counts_decade
+```
+
+Let's see what is the most repeated word after love in these songs through the decades:
+
+```{r}
+bigrams_filtered %>%
+  filter(word1 == "love") %>%
+  count(decade, word1, word2, sort = TRUE)
+```
+
+```{r}
+bigrams_filtered %>%
+  filter(word1 == "hate") %>%
+  count(decade, word1, word2, sort = TRUE)
+```
+
+```{r}
+bigrams_separated %>%
+  filter(word1 == "not") %>%
+  count(word1, word2, sort = TRUE)
+```
+
+Let's now see how much these specific bigrams appear through the decades -\> "love you", "feel good", "get high"
+
+```{r}
+#como alguna de estas combinaciones tienen stopwords volvemos a hacer el count que incluye las stop words
+
+bigram_counts_decade <- songs_bigrams %>% 
+  count(decade, bigram, sort = TRUE)
+
+selected_bigrams <- c("broken heart", "kiss me", "feel good", #love themes
+                      "get high", "all night", "dance all", #party themes
+                      "kill you", "die young", "pull trigger", #violence
+                      "black lives", "stand up", "the system") #social conscience 
+
+bigram_counts_decade %>%
+  filter(bigram %in% selected_bigrams)
+```
+
+```{r}
+#not sure if this is useful
+bigram_tf_idf <- bigrams_united %>%
+  count(decade, bigram) %>%
+  bind_tf_idf(bigram, decade, n) %>%
+  arrange(desc(tf_idf))
+
+bigram_tf_idf
+```
+
+-   Use `pairwise_count` to create a dataframe with word pairs co-occurring most often across the script.
+
+```{r}
+library(widyr)
+
+word_pairs <- lyrics_words  |> 
+  pairwise_count(word, song_id, sort = TRUE) 
+
+word_pairs_by_decade <- lyrics_words |> 
+  group_by(decade) |> 
+  group_split() |> 
+  map_df(~pairwise_count(.x, word, song_id, sort = TRUE) %>%
+           mutate(decade = unique(.x$decade)))
+
+```
+```{r}
+top_bigrams <- word_pairs_by_decade %>%
+  filter(n >= 10) %>%
+  group_by(decade) %>%
+  slice_max(order_by = n, n = 20) %>%
+  ungroup() %>%
+  mutate(bigram = paste(item1, item2))  # Crear columna de texto combinada
+
+# Ordenar por frecuencia dentro de cada faceta
+top_bigrams <- top_bigrams %>%
+  group_by(decade) %>%
+  mutate(bigram = reorder_within(bigram, n, decade)) %>%
+  ungroup()
+
+# Gráfico de barras facetado
+ggplot(top_bigrams, aes(bigram, n, fill = decade)) +
+  geom_col(show.legend = FALSE) +
+  scale_x_reordered() +
+  coord_flip() +
+  facet_wrap(~decade, scales = "free_y") +
+  theme_minimal(base_size = 12) +
+  labs(
+    title = "Top 20 Word Pairs by Decade",
+    x = "Bigram (word pair)",
+    y = "Co-occurrence count"
+  )
+```
+
+
+
+Use `pairwise_cors` to find correlations between words instead of just co-appearances.
+
+```{r}
+word_cors <- lyrics_words %>%
+  group_by(word) %>%
+  filter(n() >= 20) %>%
+  pairwise_cor(word, song_id, sort = TRUE)
+
+word_cors
+```
+
+-   Create a graph with word correlations using `ggraph`.
+
+```{r}
+set.seed(2016)
+
+word_cors %>%
+  filter(correlation > 0.4) %>%
+  graph_from_data_frame() %>%
+  ggraph(layout = "fr") +
+  geom_edge_link(aes(edge_alpha = correlation), show.legend = FALSE) +
+  geom_node_point(color = "lightblue", size = 5) +
+  geom_node_text(aes(label = name), repel = TRUE) +
+  theme_void()
+```
+```{r}
+word_cors_by_decade <- lyrics_words %>%
+  group_by(decade) %>%
+  group_split() %>%
+  map_df(~ .x %>%
+           group_by(word) %>%
+           filter(n() >= 20) %>%
+           pairwise_cor(word, song_id, sort = TRUE) %>%
+           mutate(decade = unique(.x$decade))
+  )
+
+word_cors_by_decade %>%
+  filter(decade == 2010, correlation > 0.4) %>%
+  graph_from_data_frame() %>%
+  ggraph(layout = "fr") +
+  geom_edge_link(aes(edge_alpha = correlation), show.legend = FALSE) +
+  geom_node_point(color = "lightblue", size = 5) +
+  geom_node_text(aes(label = name), repel = TRUE) +
+  theme_void() +
+  ggtitle("Word Correlation Network – 2010s")
+
+```
+```{r}
+word_cors_by_decade %>%
+  filter(decade == 1950, correlation > 0.4) %>%
+  graph_from_data_frame() %>%
+  ggraph(layout = "fr") +
+  geom_edge_link(aes(edge_alpha = correlation), show.legend = FALSE) +
+  geom_node_point(color = "lightblue", size = 5) +
+  geom_node_text(aes(label = name), repel = TRUE) +
+  theme_void() +
+  ggtitle("Word Correlation Network – 1950s")
+```
+
+
+# 
+
+```{r}
+word_counts <- df |> 
+  unnest_tokens(word, lyrics) |> 
+  anti_join(stop_words) |> 
   count(decade, word, sort = TRUE)
 
-
-dtm <- word_counts %>%
+dtm <- word_counts |> 
   cast_dtm(decade, word, n)
 ```
 
 ```{r}
-
-
 # LDA anwenden (z.B. 4 Themen, kannst du anpassen)
 lda_model <- LDA(dtm, k = 4, control = list(seed = 1234))
-
-
 ```
 
 ```{r}
