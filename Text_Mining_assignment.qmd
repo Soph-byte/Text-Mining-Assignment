@@ -4,74 +4,195 @@ format: html
 editor: visual
 ---
 
+# Introduction
+
+In this project, we explore how song lyrics have evolved from 1950 to 2020 using a range of text mining techniques. Our goal is to uncover emotional and thematic trends across decades. TODO
+We analyze song lyrics from 1950-2020 to see if themes have changed.
+
+We use a dataset of English-language song lyrics and apply three main text analysis techniques:
+
+1. **Sentiment analysis**: to track emotions like joy, sadness, anger, and trust over time.
+2. **Bigram analysis**: to see which word pairs are most common in different decades.
+3. **Topic modelling**: to identify the key themes (topics) that dominate lyrics in different eras.
+
+The ultimate goal is to combine these insights to tell a story of musical evolution: TO DO 
+
+- e.g. from expressions of love and romance in the 1950s to the rise of anger, protest, and social commentary in more recent years.
+
 ## Libraries
 
-```{r}
-library(readr)
-library(tidyverse)
-library(tidytext)
-library(topicmodels)
-library(tm)
-library(quanteda)
-library(widyr)
+To work with this script, the libraries below are requiered. If not dowloaded yet, set the following chunk to eval=T. 
 
+```{r packages downloads, eval=F}
+# Install packages if needed (only run these lines once)
+install.packages("tidyverse")
+install.packages("tidytext")
+install.packages("topicmodels")
+install.packages("tm")
+install.packages("quanteda")
+install.packages("widyr")
+install.packages("wordcloud")
+install.packages("ggraph")
+install.packages("igraph") 
+```
+
+Now you can load the libraries as normal: 
+
+```{r libraries}
+library(readr)        # for reading data
+library(tidyverse)    # data wrangling and plotting
+library(tidytext)     # text mining
+library(topicmodels)  # topic modelling (LDA)
+library(tm)           # text mining functions
+library(quanteda)     
+library(widyr)        # pairwise word analysis
+library(wordcloud)    # wordclouds
+library(ggraph)       # graph visualisation
+library(igraph)       # network analysis
 
 ```
 
-We analyze song lyrics from 1950-2020 to see if themes have changed.
+Finally, we load the dataset that we will use. 
 
 ```{r}
 df <- read_csv("tcc_ceds_music.csv")
 ```
 
+# Initial exploration 
+
+Before starting any analysis, to make sure that our dataset is clean and valid for text mining tasks and will work with our functions, we have to:
+
+- Preview the data structure
+- Check for duplicates
+- Identify any missing values
+
 ```{r}
+dim(df)
 head(df)
-
-colnames(df)
-
-
-df |>  duplicated() |>  sum()
-
-df |>  summarise_all(~sum(is.na(.)))
+names(df)
 ```
 
-```{r}
+The dataset we are using has over 28372 entries described with 31 variables, such as `artist_name`, `track_name`, `realease_date` or `genre`. We find our most important column under `lyrics`, as this is the column that will give us our text components to analyse. 
 
-df |> 
-  count(release_date) |> 
+```{r}
+df %>%  
+  duplicated() %>%  
+  sum()
+
+df %>%  
+  summarise_all(~sum(is.na(.)))
+```
+
+
+We find very no duplicates or missing values, which allows us to proceed without major preprocessing.
+
+## Descriptive analysis
+
+Before diving into text processing, we begin with a basic exploration of the dataset to understand its structure and time coverage.
+
+```{r}
+# Decades with songs
+unique(df$release_date)
+length(unique(df$release_date))
+2019 - 1950
+
+# Number of songs released per year
+df %>% 
+  count(release_date) %>% 
   ggplot(aes(x = release_date, y = n)) +
   geom_col(fill = "steelblue") +
   labs(title = "Number of Songs per Year",
        x = "Year", y = "Number of Songs") +
   theme_minimal()
 ```
+The dataset includes songs from 1950 on onwards until 2019, without skipping any year. The number of songs increases significantly starting in the late 1950s, with a steady rise through the 1980s and into the 21st century. The increase is also visible after 2010, possibly reflecting an improved availability of digital music records.
 
 ```{r}
-
-df |> 
-  count(artist_name, sort = TRUE) |> 
-  top_n(10) |> 
+# Top 10 most frequent artists in the dataset
+df %>% 
+  count(artist_name, sort = TRUE) %>% 
+  top_n(10) %>% 
   ggplot(aes(x = reorder(artist_name, n), y = n)) +
   geom_col(fill = "tomato") +
   coord_flip() +
-  labs(title = "Top 10 Artists",
+  labs(title = "Top 10 Artists by Number of Songs",
        x = NULL, y = "Number of Songs") +
   theme_minimal()
+
+names(df)
+```
+TODO: 
+another graph, is it worth it? 
+```{r}
+# Get top 10 artists by number of songs
+top_artists <- df %>% 
+  count(artist_name, sort = TRUE) %>% 
+  top_n(9, n) %>% 
+  pull(artist_name)
+
+# Filter dataset to include only those top artists
+df_top_artists <- df %>% 
+  filter(artist_name %in% top_artists)
+
+# Identify top 10 artists
+top_artists <- df %>% 
+  count(artist_name, sort = TRUE) %>% 
+  top_n(10, n) %>% 
+  pull(artist_name)
+
+# Filter dataset
+df_top_artists <- df %>% 
+  filter(artist_name %in% top_artists)
+
+# Plot: number of songs per year per artist
+ggplot(df_top_artists, aes(x = release_date)) +
+  geom_bar(fill = "steelblue") +
+  facet_wrap(~ fct_reorder(artist_name, release_date, .fun = min), scales = "free_y") +
+  labs(title = "Song Release Distribution of Top 9 Artists",
+       x = "Year", y = "Number of Songs") +
+  theme_minimal()
+
+# WITH COLOUR? 
+# Filter and summarise data by year
+df_top_artists_years <- df %>%
+  filter(artist_name %in% top_artists) %>%
+  group_by(artist_name, release_date) %>%
+  summarise(songs = n(), .groups = "drop")
+
+# Plot: now fill works because we summarised by release year
+ggplot(df_top_artists_years, aes(x = release_date, y = songs, fill = release_date)) +
+  geom_col() +
+  facet_wrap(~ fct_reorder(artist_name, release_date, .fun = min), scales = "free_y") +
+  scale_fill_gradient(low = "skyblue", high = "navy", name = "Release Year") +
+  labs(
+    title = "Song Release Distribution of Top 10 Artists",
+    x = "Release Year",
+    y = "Number of Songs"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
 ```
 
-```{r}
+The artists with the most entries are icons like Johnny Cash, Ella Fitzgerald, and Dean Martin. These figures indicate a strong representation of classic country, jazz, and pop artists, likely shaping the lyrical content of earlier decades. There are a few likely reasons why older artists dominate this list. We believe it could be because they have had more time to put songs out. For example, Dolly Parton is still putting music out, yet started in 1967 with her album "Hello, I'm Dolly." The older artists might have also had higher prolific output, as many classic artists had long productive careers with hundres of songs. In comparison, a raper from the 2010s might just be starting to put as many songs out. And since not all become very famous or repected, they might also not be represented in this list. Hence, we also could be dealing with a certain curation bias for established songs. 
+It is very important to appreciate this potential bias, as it may shape the kinds of themes, emotional tones, and language that dominate the lyrics if we were to analyse them without any further distinction. 
 
-df <- df |> 
+## Decade Assignment 
+
+To account for these generational imbalances and allow for fairer comparisons, we group the songs by decade, enabling us to analyse trends in lyrics over time while controlling for differences in artist representation and output volume.
+
+```{r}
+# Create decade variable
+df <- df %>% 
   mutate(decade = floor(release_date / 10) * 10) 
 
-
-df |> 
+# Preview of new column to make sure it works 
+df %>% 
   select(release_date, decade) %>%
   sample_n(5)
 
-
-df |> 
-  count(decade) |> 
+# Number of songs per decade
+df %>% 
+  count(decade) %>% 
   ggplot(aes(x = decade, y = n)) +
   geom_col(fill = "steelblue") +
   labs(title = "Number of Songs per Decade",
@@ -80,10 +201,20 @@ df |>
 
 ```
 
+We observe a steady increase in the number of songs across decades, with the 2010s showing the highest volume. This suggests that the dataset is skewed towards more recent decades. As said before, this likely is due to better online availability of moden music. 
+However, while there are more songs are present of recent decades, these could be more  distributed across a wider range of artists. This could explain why the Top 10 Artists chart is dominated by older artists from earlier decades, as they may have had more songs included per person; whereas the 2000s and 2010s may contain a broader and more diverse pool of musicians, each with fewer entries on average.
+
+# Text mining 
+
+Having understood the structure of our dataset, we now turn to the lyrics themselves. In this next section, we apply text mining techniques to uncover patterns in language, emotion, and theme over time.
+
+## Word frequency analysis 
+
+
 ```{r}
-lyrics_words <- df |> 
-  unnest_tokens(word, lyrics) |> 
-  anti_join(stop_words) |> 
+lyrics_words <- df %>% 
+  unnest_tokens(word, lyrics) %>% 
+  anti_join(stop_words) %>% 
   rename(song_id = "...1")
 ```
 
@@ -99,7 +230,9 @@ lyrics_words %>%
   scale_x_reordered() +
   coord_flip()
 ```
+
 are the songs longer nowadays?
+
 ```{r}
 lyrics_stats <- lyrics_words %>%
   group_by(song_id, decade) %>%
@@ -113,15 +246,14 @@ ggplot(lyrics_stats, aes(x = decade, y = mean_length)) +
   labs(title = "Average lyric length by decade")
 ```
 
-
 # Sentimental Analysis
 
 ```{r}
-sentiment_by_decade <- lyrics_words |> 
-  inner_join(get_sentiments("bing")) |> 
+sentiment_by_decade <- lyrics_words %>% 
+  inner_join(get_sentiments("bing")) %>% 
   group_by(decade, sentiment) %>%
-  count() |> 
-  pivot_wider(names_from = sentiment, values_from = n, values_fill = 0) |> 
+  count() %>% 
+  pivot_wider(names_from = sentiment, values_from = n, values_fill = 0) %>% 
   mutate(sentiment_score = positive - negative)
 
 # Plot
@@ -133,9 +265,9 @@ ggplot(sentiment_by_decade, aes(x = decade, y = sentiment_score)) +
 ```
 
 ```{r}
-nrc_emotions <- lyrics_words |> 
-  inner_join(get_sentiments("nrc")) |> 
-  count(decade, sentiment) |> 
+nrc_emotions <- lyrics_words %>% 
+  inner_join(get_sentiments("nrc")) %>% 
+  count(decade, sentiment) %>% 
   filter(sentiment %in% c("anger", "joy", "fear", "trust", "sadness"))
 
 # Plot
@@ -149,17 +281,17 @@ ggplot(nrc_emotions, aes(x = decade, y = n, fill = sentiment)) +
 ```
 
 ```{r}
-nrc_joy <- get_sentiments("nrc") |> 
+nrc_joy <- get_sentiments("nrc") %>% 
   filter(sentiment == "joy")
 
 joy_words_by_decade <- lyrics_words %>%
   inner_join(nrc_joy, by = "word") %>%
   count(decade, word, sort = TRUE)
 
-joy_words_by_decade |> 
-  group_by(decade) |> 
-  top_n(10, n) |>  
-  ungroup() |> 
+joy_words_by_decade %>% 
+  group_by(decade) %>% 
+  top_n(10, n) %>%  
+  ungroup() %>% 
   ggplot(aes(x = reorder_within(word, n, decade), y = n, fill = factor(decade))) +
   geom_col(show.legend = FALSE) +
   facet_wrap(~ decade, scales = "free_y") +
@@ -171,17 +303,17 @@ joy_words_by_decade |>
 ```
 
 ```{r}
-nrc_anger <- get_sentiments("nrc") |> 
+nrc_anger <- get_sentiments("nrc") %>% 
   filter(sentiment == "anger")
 
 anger_words_by_decade <- lyrics_words %>%
   inner_join(nrc_anger, by = "word") %>%
   count(decade, word, sort = TRUE)
 
-anger_words_by_decade |> 
-  group_by(decade) |> 
-  top_n(10, n) |>  
-  ungroup() |> 
+anger_words_by_decade %>% 
+  group_by(decade) %>% 
+  top_n(10, n) %>%  
+  ungroup() %>% 
   ggplot(aes(x = reorder_within(word, n, decade), y = n, fill = factor(decade))) +
   geom_col(show.legend = FALSE) +
   facet_wrap(~ decade, scales = "free_y") +
@@ -193,17 +325,17 @@ anger_words_by_decade |>
 ```
 
 ```{r}
-nrc_sadness <- get_sentiments("nrc") |> 
+nrc_sadness <- get_sentiments("nrc") %>% 
   filter(sentiment == "sadness")
 
 sadness_words_by_decade <- lyrics_words %>%
   inner_join(nrc_sadness, by = "word") %>%
   count(decade, word, sort = TRUE)
 
-sadness_words_by_decade |> 
-  group_by(decade) |> 
-  top_n(10, n) |>  
-  ungroup() |> 
+sadness_words_by_decade %>% 
+  group_by(decade) %>% 
+  top_n(10, n) %>%  
+  ungroup() %>% 
   ggplot(aes(x = reorder_within(word, n, decade), y = n, fill = factor(decade))) +
   geom_col(show.legend = FALSE) +
   facet_wrap(~ decade, scales = "free_y") +
@@ -289,14 +421,14 @@ ggplot(song_words, aes(term_frequency)) +
 ```
 
 ```{r}
-freq_by_rank <- song_words |> 
-  group_by(decade) |>  
+freq_by_rank <- song_words %>% 
+  group_by(decade) %>%  
   mutate(rank = row_number()) %>%
   ungroup()
 ```
 
 ```{r}
-freq_by_rank |> 
+freq_by_rank %>% 
   ggplot(aes(rank, term_frequency, color = decade)) + 
   geom_line(size = 1.1, alpha = 0.8, show.legend = FALSE) + 
   scale_x_log10() +
@@ -308,7 +440,7 @@ lol!!!!!!!!!!
 # N-GRAMS
 
 ```{r}
-songs_bigrams <- df |> 
+songs_bigrams <- df %>% 
   unnest_tokens(bigram, lyrics, token = "ngrams", n = 2) %>%
   filter(!is.na(bigram))
 
@@ -318,7 +450,7 @@ songs_bigrams
 We can use count to examine the most frequent bigrams:
 
 ```{r}
-songs_bigrams |> 
+songs_bigrams %>% 
   count(bigram, sort = TRUE)
 ```
 
@@ -334,8 +466,8 @@ bigrams_separated
 ```
 
 ```{r}
-bigrams_filtered <- bigrams_separated |> 
-  filter(!word1 %in% stop_words$word) |> 
+bigrams_filtered <- bigrams_separated %>% 
+  filter(!word1 %in% stop_words$word) %>% 
   filter(!word2 %in% stop_words$word)
 
 bigrams_filtered
@@ -409,16 +541,17 @@ bigram_tf_idf
 ```{r}
 library(widyr)
 
-word_pairs <- lyrics_words  |> 
+word_pairs <- lyrics_words  %>% 
   pairwise_count(word, song_id, sort = TRUE) 
 
-word_pairs_by_decade <- lyrics_words |> 
-  group_by(decade) |> 
-  group_split() |> 
+word_pairs_by_decade <- lyrics_words %>% 
+  group_by(decade) %>% 
+  group_split() %>% 
   map_df(~pairwise_count(.x, word, song_id, sort = TRUE) %>%
            mutate(decade = unique(.x$decade)))
 
 ```
+
 ```{r}
 top_bigrams <- word_pairs_by_decade %>%
   filter(n >= 10) %>%
@@ -447,8 +580,6 @@ ggplot(top_bigrams, aes(bigram, n, fill = decade)) +
   )
 ```
 
-
-
 Use `pairwise_cors` to find correlations between words instead of just co-appearances.
 
 ```{r}
@@ -474,6 +605,7 @@ word_cors %>%
   geom_node_text(aes(label = name), repel = TRUE) +
   theme_void()
 ```
+
 ```{r}
 word_cors_by_decade <- lyrics_words %>%
   group_by(decade) %>%
@@ -496,6 +628,7 @@ word_cors_by_decade %>%
   ggtitle("Word Correlation Network – 2010s")
 
 ```
+
 ```{r}
 word_cors_by_decade %>%
   filter(decade == 1950, correlation > 0.4) %>%
@@ -508,16 +641,15 @@ word_cors_by_decade %>%
   ggtitle("Word Correlation Network – 1950s")
 ```
 
-
 # 
 
 ```{r}
-word_counts <- df |> 
-  unnest_tokens(word, lyrics) |> 
-  anti_join(stop_words) |> 
+word_counts <- df %>% 
+  unnest_tokens(word, lyrics) %>% 
+  anti_join(stop_words) %>% 
   count(decade, word, sort = TRUE)
 
-dtm <- word_counts |> 
+dtm <- word_counts %>% 
   cast_dtm(decade, word, n)
 ```
 
