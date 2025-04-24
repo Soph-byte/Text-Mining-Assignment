@@ -1,0 +1,143 @@
+---
+title: "Untitled"
+output: html_document
+date: "2025-04-24"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Unused stuff
+
+# Sentiment analysis NRC 
+
+```{r}
+nrc_joy <- get_sentiments("nrc") %>% 
+  filter(sentiment == "joy")
+
+joy_words_by_decade <- lyrics_words %>%
+  inner_join(nrc_joy, by = "word") %>%
+  count(decade, word, sort = TRUE)
+
+joy_words_by_decade %>% 
+  group_by(decade) %>% 
+  top_n(10, n) %>%  
+  ungroup() %>% 
+  ggplot(aes(x = reorder_within(word, n, decade), y = n, fill = factor(decade))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ decade, scales = "free_y") +
+  scale_x_reordered() +
+  coord_flip() +
+  labs(title = "Words associated with 'joy' by decade",
+     x = "Word",
+     y = "Frequency")
+```
+
+```{r}
+nrc_anger <- get_sentiments("nrc") %>% 
+  filter(sentiment == "anger")
+
+anger_words_by_decade <- lyrics_words %>%
+  inner_join(nrc_anger, by = "word") %>%
+  count(decade, word, sort = TRUE)
+
+anger_words_by_decade %>% 
+  group_by(decade) %>% 
+  top_n(10, n) %>%  
+  ungroup() %>% 
+  ggplot(aes(x = reorder_within(word, n, decade), y = n, fill = factor(decade))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ decade, scales = "free_y") +
+  scale_x_reordered() +
+  coord_flip() +
+  labs(title = "Words associated with 'anger' by decade",
+     x = "Word",
+     y = "Frequency")
+```
+
+```{r}
+nrc_sadness <- get_sentiments("nrc") %>% 
+  filter(sentiment == "sadness")
+
+sadness_words_by_decade <- lyrics_words %>%
+  inner_join(nrc_sadness, by = "word") %>%
+  count(decade, word, sort = TRUE)
+
+sadness_words_by_decade %>% 
+  group_by(decade) %>% 
+  top_n(10, n) %>%  
+  ungroup() %>% 
+  ggplot(aes(x = reorder_within(word, n, decade), y = n, fill = factor(decade))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ decade, scales = "free_y") +
+  scale_x_reordered() +
+  coord_flip() +
+  labs(title = "Words associated with 'sadness' by decade",
+     x = "Word",
+     y = "Frequency")
+```
+
+# wordclouds by decade 
+
+```{r}
+{r}
+#by decade
+sentiment_by_decade <- lyrics_words %>%
+  inner_join(get_sentiments("bing"), by = "word") %>%
+  count(decade, word, sentiment, sort = TRUE)
+
+split_data <- split(sentiment_by_decade, sentiment_by_decade$decade)
+
+
+for (dec in names(split_data)) {
+  data <- split_data[[dec]]
+  
+
+  dev.new(width = 8, height = 6)  
+  
+  with(data,
+       wordcloud(words = word,
+                 freq = n,
+                 max.words = 100,
+                 random.order = FALSE,
+                 colors = ifelse(sentiment == "positive", "green", "red"))
+  )
+  title(main = paste("Wordcloud – Decade", dec), line = -1)
+}
+
+```
+
+# Term Frequency
+
+To continue the analysis, we now turn to term frequency to explore how often specific words appear in the lyrics, regardless of their sentiment, and how these patterns differ across decades.
+
+```{r}
+total_words <- lyrics_words %>% 
+  group_by(decade) %>% 
+  summarize(total = sum(n()))
+
+song_words <- left_join(lyrics_words, total_words)
+
+song_words <- song_words %>%
+  mutate(term_frequency = n()/total)
+
+```
+
+```{r}
+ggplot(song_words, aes(term_frequency)) +
+  geom_histogram(show.legend = TRUE) 
+```
+
+```{r}
+freq_by_rank <- song_words %>% 
+  group_by(decade) %>%  
+  mutate(rank = row_number()) %>%
+  ungroup()
+
+freq_by_rank %>% 
+  ggplot(aes(rank, term_frequency, color = decade)) + 
+  geom_line(size = 1.1, alpha = 0.8, show.legend = FALSE) + 
+  scale_x_log10() +
+  scale_y_log10()
+```

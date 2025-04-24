@@ -4,41 +4,102 @@ format: html
 editor: visual
 ---
 
+# Introduction
+
+TODO: rewrite when finished and conclusions
+
+In this project, we explore how song lyrics have evolved from 1950 to 2020 using a range of text mining techniques. Our goal is to uncover emotional and thematic trends across decades. We analyze song lyrics from 1950-2020 to see if themes have changed.
+
+We use a dataset of English-language song lyrics and apply three main text analysis techniques:
+
+1.  MIAU
+2.  **Sentiment analysis**: to track emotions like joy, sadness, anger, and trust over time.
+3.  **Bigram analysis**: to see which word pairs are most common in different decades.
+4.  **Topic modelling**: to identify the key themes (topics) that dominate lyrics in different eras.
+
+The ultimate goal is to combine these insights to tell a story of musical evolution: TO DO
+
+-   e.g. from expressions of love and romance in the 1950s to the rise of anger, protest, and social commentary in more recent years.
+
 ## Libraries
 
-```{r}
-library(readr)
-library(tidyverse)
-library(tidytext)
-library(topicmodels)
-library(tm)
-library(quanteda)
-library(widyr)
+To work with this script, the libraries below are requiered. If not dowloaded yet, set the following chunk to eval=T.
 
+```{r packages downloads, eval=F}
+# Install packages if needed (only run these lines once)
+install.packages("tidyverse")
+install.packages("tidytext")
+install.packages("topicmodels")
+install.packages("tm")
+install.packages("quanteda")
+install.packages("widyr")
+install.packages("wordcloud")
+install.packages("ggraph")
+install.packages("igraph") 
+```
+
+Now you can load the libraries as normal:
+
+```{r libraries}
+library(readr)        # for reading data
+library(tidyverse)    # data wrangling and plotting
+library(tidytext)     # text mining
+library(topicmodels)  # topic modelling (LDA)
+library(tm)           # text mining functions
+library(quanteda)     
+library(widyr)        # pairwise word analysis
+library(wordcloud)    # wordclouds
+library(ggraph)       # graph visualisation
+library(igraph)       # network analysis
 
 ```
 
-We analyze song lyrics from 1950-2020 to see if themes have changed.
+Finally, we load the dataset that we will use.
 
 ```{r}
 df <- read_csv("tcc_ceds_music.csv")
 ```
 
+# Initial exploration
+
+Before starting any analysis, to make sure that our dataset is clean and valid for text mining tasks and will work with our functions, we have to:
+
+-   Preview the data structure
+-   Check for duplicates
+-   Identify any missing values
+
 ```{r}
+dim(df)
 head(df)
-
-colnames(df)
-
-
-df |>  duplicated() |>  sum()
-
-df |>  summarise_all(~sum(is.na(.)))
+names(df)
 ```
 
-```{r}
+The dataset we are using has over 28372 entries described with 31 variables, such as `artist_name`, `track_name`, `realease_date` or `genre`. We find our most important column under `lyrics`, as this is the column that will give us our text components to analyse.
 
-df |> 
-  count(release_date) |> 
+```{r}
+df %>%  
+  duplicated() %>%  
+  sum()
+
+df %>%  
+  summarise_all(~sum(is.na(.)))
+```
+
+We find very no duplicates or missing values, which allows us to proceed without major preprocessing.
+
+## Descriptive analysis
+
+Before diving into text processing, we begin with a basic exploration of the dataset to understand its structure and time coverage.
+
+```{r}
+# Decades with songs
+unique(df$release_date)
+length(unique(df$release_date))
+2019 - 1950
+
+# Number of songs released per year
+df %>% 
+  count(release_date) %>% 
   ggplot(aes(x = release_date, y = n)) +
   geom_col(fill = "steelblue") +
   labs(title = "Number of Songs per Year",
@@ -46,60 +107,191 @@ df |>
   theme_minimal()
 ```
 
-```{r}
+The dataset includes songs from 1950 on onwards until 2019, without skipping any year. The number of songs increases significantly starting in the late 1950s, with a steady rise through the 1980s and into the 21st century. The increase is also visible after 2010, possibly reflecting an improved availability of digital music records.
 
-df |> 
-  count(artist_name, sort = TRUE) |> 
-  top_n(10) |> 
+```{r}
+# Top 10 most frequent artists in the dataset
+df %>% 
+  count(artist_name, sort = TRUE) %>% 
+  top_n(10) %>% 
   ggplot(aes(x = reorder(artist_name, n), y = n)) +
   geom_col(fill = "tomato") +
   coord_flip() +
-  labs(title = "Top 10 Artists",
+  labs(title = "Top 10 Artists by Number of Songs",
        x = NULL, y = "Number of Songs") +
   theme_minimal()
+
+names(df)
 ```
 
-```{r}
+TODO: another graph, is it worth it?
 
-df <- df |> 
+```{r}
+# Get top 10 artists by number of songs
+top_artists <- df %>% 
+  count(artist_name, sort = TRUE) %>% 
+  top_n(9, n) %>% 
+  pull(artist_name)
+
+# Filter dataset to include only those top artists
+df_top_artists <- df %>% 
+  filter(artist_name %in% top_artists)
+
+# Identify top 10 artists
+top_artists <- df %>% 
+  count(artist_name, sort = TRUE) %>% 
+  top_n(10, n) %>% 
+  pull(artist_name)
+
+# Filter dataset
+df_top_artists <- df %>% 
+  filter(artist_name %in% top_artists)
+
+# Plot: number of songs per year per artist
+ggplot(df_top_artists, aes(x = release_date)) +
+  geom_bar(fill = "steelblue") +
+  facet_wrap(~ fct_reorder(artist_name, release_date, .fun = min), scales = "free_y") +
+  labs(title = "Song Release Distribution of Top 9 Artists",
+       x = "Year", y = "Number of Songs") +
+  theme_minimal()
+
+# TODO: WITH COLOUR? 
+# Filter and summarise data by year
+df_top_artists_years <- df %>%
+  filter(artist_name %in% top_artists) %>%
+  group_by(artist_name, release_date) %>%
+  summarise(songs = n(), .groups = "drop")
+
+# Plot: now fill works because we summarised by release year
+ggplot(df_top_artists_years, aes(x = release_date, y = songs, fill = release_date)) +
+  geom_col() +
+  facet_wrap(~ fct_reorder(artist_name, release_date, .fun = min), scales = "free_y") +
+  scale_fill_gradient(low = "skyblue", high = "navy", name = "Release Year") +
+  labs(
+    title = "Song Release Distribution of Top 10 Artists",
+    x = "Release Year",
+    y = "Number of Songs"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+```
+
+The artists with the most entries are icons like Johnny Cash, Ella Fitzgerald, and Dean Martin. These figures indicate a strong representation of classic country, jazz, and pop artists, likely shaping the lyrical content of earlier decades. There are a few likely reasons why older artists dominate this list. We believe it could be because they have had more time to put songs out. For example, Dolly Parton is still putting music out, yet started in 1967 with her album "Hello, I'm Dolly." The older artists might have also had higher prolific output, as many classic artists had long productive careers with hundres of songs. In comparison, a raper from the 2010s might just be starting to put as many songs out. And since not all become very famous or repected, they might also not be represented in this list. Hence, we also could be dealing with a certain curation bias for established songs. It is very important to appreciate this potential bias, as it may shape the kinds of themes, emotional tones, and language that dominate the lyrics if we were to analyse them without any further distinction.
+
+## Decade Assignment
+
+To account for these generational imbalances and allow for fairer comparisons, we group the songs by decade, enabling us to analyse trends in lyrics over time while controlling for differences in artist representation and output volume.
+
+```{r}
+# Create decade variable
+df <- df %>% 
   mutate(decade = floor(release_date / 10) * 10) 
 
-
-df |> 
+# Preview of new column to make sure it works 
+df %>% 
   select(release_date, decade) %>%
   sample_n(5)
 
-
-df |> 
-  count(decade) |> 
+# Number of songs per decade
+df %>% 
+  count(decade) %>% 
   ggplot(aes(x = decade, y = n)) +
   geom_col(fill = "steelblue") +
   labs(title = "Number of Songs per Decade",
        x = "Decade",
        y = "Number of Songs")
 
+df %>% 
+  group_by(decade) %>% 
+  summarize(total = sum(n()))
+
+
 ```
 
-```{r}
-lyrics_words <- df |> 
-  unnest_tokens(word, lyrics) |> 
-  anti_join(stop_words) |> 
-  rename(song_id = "...1")
-```
+We observe a steady increase in the number of songs across decades, with the 2010s showing the highest volume (5631 songs). This suggests that the dataset is skewed towards more recent decades. As said before, this likely is due to better online availability of moden music. However, while there are more songs are present of recent decades, these could be more distributed across a wider range of artists. This could explain why the Top 10 Artists chart is dominated by older artists from earlier decades, as they may have had more songs included per person; whereas the 2000s and 2010s may contain a broader and more diverse pool of musicians, each with fewer entries on average.
+
+Having understood the structure of our dataset, we now turn to the lyrics themselves. In the next sections, we apply text mining techniques to uncover patterns in language, emotion, and theme over time.
+
+# Word frequency analysis
+
+To begin our text mining exploration, we break the lyrics into individual words (tokens) and remove common stop words like “the”, “and”, or “of” that carry little semantic weight. We do this by using `anti_join` and a specialized list of stopwords, as stopwords can have high and low frequencies, so filtering out frequencies would not work. This allows us to focus on the most meaningful language used across different decades.
 
 ```{r}
-#general count
-lyrics_words %>%
+lyrics_words <- df %>% 
+  unnest_tokens(word, lyrics) %>% 
+  anti_join(stop_words) %>% 
+  rename(song_id = "...1") # we rename song_id column for clarity
+
+lyrics_words
+```
+
+A quick look at the first resulting words, such as "time," "untrue," or "tear," shows they are indeed lyrics-related, emotionally loaded, and thematically rich—suggesting that the tokenisation process has worked as expected.
+
+Now, we turn to what these words can tell us: what were the most common words across decades, and how have songs changed in length over time?
+
+## Words over time
+
+We are looking towards insights that reveal how have the words being used have shifted over time and if they reflect content evolution or genre popularity changes. Even though rudimentary, a simple word count can be a great tool to see how the lyrics, and hence, mood of music has changed over time.
+
+The tables below show the most common words by decades and the most common words overall. The plot below shows the ten most frequently used non-stop words in song lyrics across each decade from the 1950s to the 2010s.
+
+```{r}
+most_common_word_by_decade <- lyrics_words %>%
   count(decade, word, sort = TRUE) %>%
   group_by(decade) %>%
-  slice_max(n, n = 10) %>%
+  slice_max(n, n = 10)
+
+most_common_word_by_decade
+
+most_common_word_by_decade %>% 
+  ungroup() %>% 
+  select(-decade) %>%
+  group_by(word) %>% 
+  summarise(total_n = sum(n)) %>%
+  arrange(desc(total_n))
+
+# Plot 
+most_common_word_by_decade %>%
   ggplot(aes(reorder_within(word, n, decade), n, fill = decade)) +
   geom_col(show.legend = FALSE) +
   facet_wrap(~decade, scales = "free") +
   scale_x_reordered() +
   coord_flip()
+
 ```
-are the songs longer nowadays?
+
+TODO: Words by decade but colour coded by sentiment??
+
+In the plot we can see that some words appear consistently in the top 10 across all or nearly all decades. "Time" is present in all seven decades, and the most frequent word overall with 26504 appearances. Its consistent presence suggests an enduring focus on temporality concepts that could be memories, moments, urgency, or have a philosophical reflection. In any case, "time" is highly important. The next 7 most frequent words round between the 16700 and 12500 appearences, and include "**feel**," "**heart**," "**yeah**," "**life**," "**baby**," "**leave**," and "**live**." These words suggest that emotion ("feel," "heart"), relationships ("baby," "leave"), and experiences ("live," "life") are timeless themes in music, though the context in which they are used may evolve.
+
+Still, even with common themes, we can observe a noticeable thematic evolution in language:
+
+-   1950s: seem to be dominated by by deeply emotional and romantic terms: "**heart**," "**blue**," "**baby**," "**kiss**," "**feel**," and "**dream**." This marks a lyrical landscape focused on love and idealised romance, typical of pop, blues, soul and country genres. However, they can also be reflective of the growing rock and roll movement, whose most famours representative in this decade was the rock-idol Elvis Presley.
+
+-   1960s: words like "**yeah**" and "**live**" begin to emerge alongside traditional terms, which may reflect a cultural shift towards youth expression, rebellion, and the solidifying rock and roll movement, especially with The Rolling Stones becoming a mayor musical leader in this decade. Of course, The Beatles, their conceptual counterpart, had their golden era also in this decade, which reflects on the persistence on sweet and classical topics of love.
+
+-   1970s: we see a balance between emotional (e.g. "**heart**," "**feel**") and existential ("**life**," "**world**") themes, which could indicate the popularity of disco music famous in the 70s but also the start of more introspective lyrics, perhaps influenced by folk, rock (Aerosmith had seven studio albums chart in the 1970s), and emerging soul/funk genres[^1].
+
+-   1980s: very similar to the 1970s, but with increasing prominence of "**yeah**" and "**baby**," possibly reflecting the rise of indie pop, synth-pop and metal. At the end of the decade hip hop would bloom in its gold age which would last until the early 90s. However, the topics did not change much, which might indiciate very universal topic selection by the genres artists
+
+-   1990s: the list becomes more balanced and stable, with no strong newcomers but a continued emphasis on emotion, energy ("**yeah**," "**live**") and relationships, which could be attributed to the continuation of popularity of various types of pop from the decade before. Notably, electronic music, house and techno grew highly popular in this decade, which could explain the lack of introduction of new genre-specific words, as the music has a liminal reliance on lyrics.
+
+-   2000s: here we see the introduction of new casual expressions: "**gonna**" and "**break**" enter the top 10, indicating a more conversational, assertive tone and a bolder lyrical style. This possibly due to the influence of teen pop, with renownded artists such as \*NSYNC, Backstreet Boys or Britney Spears as representatives. R&B was also one of the most popular genres, showcased by the emergence of Beyoncé, Rihanna and Alicia Keys[^2].
+
+-   2010s: we witness a wew standout word with "**fuck**," which is the only profanity in the top list, marking a significant shift in lyrical boldnes (but not necessarily social acceptability, as these type of lyrics are still highly debated). It also includes "**wanna**," reinforcing the trend toward casual and direct language. These changes point to success of adult contemporary music (Bruno Mars, Maroon 5, Taylor Swift), the continuous growth of hip hop and rap (Kendrick Lamar, Future, Chanxe the Rapper, Nicki Minaj), and the rise of trap and explicit pop (Young Thug, 21 Savage, Migos) where raw, unfiltered expression is more common.
+
+[^1]: [Wikipedia](https://en.wikipedia.org/wiki/1970s_in_music) has great articles on the popular music throughout the decades, such as for the 1970s: "In North America, Europe, and Oceania, the decade saw the rise of disco, which then went on to become one of the biggest genres of the decade, especially in the mid-to-late 1970s. In Europe, a variant known as Euro disco rose in popularity towards the end of the 1970s. Aside from disco, funk, soul, R&B, smooth jazz, and jazz fusion remained popular throughout the decade. Rock music played an important part in the Western musical scene, with punk rock thriving throughout the mid to late 1970s."
+
+[^2]: [Wikipedia](https://en.wikipedia.org/wiki/2000s_in_music): "In 2004, the Billboard Year-End Hot 100 had 15 of its top 25 singles as contemporary R&B."
+
+All in all we can say that these patterns reflect both musical genre shifts and changing social and cultural norms. The lyrical focus of songs has expanded and modernised over time. As the early decades (1950s–1970s) are steeped in romantic and emotional vocabulary, we see that starting in the 1980s and especially in the 2000s and 2010s, we see more casual, assertive, and even explicit language emerging, reflecting broader cultural changes around self-expression, social norms, and genre evolution. Finally, the consistency of emotional words like "heart," "feel," and "baby" shows that, despite these shifts, music has always remained a vehicle for emotional storytelling.
+
+Having seen now the emotional side of word frequency analysis, we explore now a more technical question: are songs getting longer or shorter?
+
+## Structural decomposition of songs
+
+In the table we can have the evolution of song length since the 1950s, which we have visualised in the graph.
+
 ```{r}
 lyrics_stats <- lyrics_words %>%
   group_by(song_id, decade) %>%
@@ -107,24 +299,45 @@ lyrics_stats <- lyrics_words %>%
   group_by(decade) %>%
   summarise(mean_length = mean(total_words))
 
-ggplot(lyrics_stats, aes(x = decade, y = mean_length)) +
-  geom_line() +
-  geom_point() +
-  labs(title = "Average lyric length by decade")
-```
-
-
-# Sentimental Analysis
-
-```{r}
-sentiment_by_decade <- lyrics_words |> 
-  inner_join(get_sentiments("bing")) |> 
-  group_by(decade, sentiment) %>%
-  count() |> 
-  pivot_wider(names_from = sentiment, values_from = n, values_fill = 0) |> 
-  mutate(sentiment_score = positive - negative)
+lyrics_stats
 
 # Plot
+ggplot(lyrics_stats, aes(x = decade, y = mean_length)) +
+  geom_point(aes(colour = as.factor(decade)), size = 8) + 
+  scale_colour_viridis_d(name = "Decade", option = "C") +
+  scale_y_continuous(limits = c(0, NA)) +
+  geom_line() +
+  geom_point() +
+  labs(
+    title = "Average lyric length per song by decade (1950–2010)",
+    x = "Decade",
+    y = "Average Word Count"
+    ) + 
+  theme_minimal()
+```
+
+We can see that lyric length remained relatively stable in the 1950s and 1960s, but then began a steady rise from the 1970s onward. By the 2010s, the average song had over 70 words, roughly 60% more than in the 1950s.
+
+This upwards trend may reflect a move toward more lyrically dense genres like rap and indie pop, changes in song structure, with more verses and fewer instrumental breaks, or maybe a change in production norms allowing for longer tracks.
+
+However, while lyrics have become longer over time, this does not necessarily mean they’ve become more complex: using more words does not always mean saying more. It could simply reflect a shift in lyrical style or vocabulary.
+
+While word frequency tells us what kinds of words dominate lyrics, it doesn't reveal the emotional tone behind them. To better understand what is being expressed, rather than just how much, we now turn to sentiment analysis to explore the emotional tone of songs across decades.
+
+# Sentiment Analysis
+
+Sentiment Analysis is a great tool to quantify the emotions being expressed in our lyrics.
+
+## TODO: what the hell is this graph ??
+
+```{r}
+sentiment_by_decade <- lyrics_words %>% 
+  inner_join(get_sentiments("bing")) %>% 
+  group_by(decade, sentiment) %>%
+  count() %>% 
+  pivot_wider(names_from = sentiment, values_from = n, values_fill = 0) %>% 
+  mutate(sentiment_score = positive - negative)
+
 ggplot(sentiment_by_decade, aes(x = decade, y = sentiment_score)) +
   geom_col(fill = "darkgreen") +
   labs(title = "Net Sentiment per Decade",
@@ -132,56 +345,115 @@ ggplot(sentiment_by_decade, aes(x = decade, y = sentiment_score)) +
 
 ```
 
+## Emotions in lyrics across time
+
+Firstly, we use the NRC lexicon, which classifies words into categories like **joy**, **sadness**, **anger**, **trust**, and **fear**. By mapping each word in the lyrics to these emotional labels, we can track how the emotional landscape of music has changed over time.
+
 ```{r}
-nrc_emotions <- lyrics_words |> 
-  inner_join(get_sentiments("nrc")) |> 
-  count(decade, sentiment) |> 
+# sentiment attribution 
+nrc_emotions <- lyrics_words %>% 
+  inner_join(get_sentiments("nrc")) %>% 
+  count(decade, sentiment) %>% 
   filter(sentiment %in% c("anger", "joy", "fear", "trust", "sadness"))
+nrc_emotions
 
 # Plot
 ggplot(nrc_emotions, aes(x = decade, y = n, fill = sentiment)) +
   geom_col(position = "dodge") +
-  labs(title = "Emotions per Decade (nrc)",
+  scale_fill_manual(values = c(
+  "anger" = "#e21818",
+  "fear" = "#976cb6",
+  "sadness" = "#54bbdd",
+  "joy" = "#ffee35",
+  "trust" = "#76dd54"
+)) +
+  labs(title = "Emotions per Decade (NRC)",
        y = "Count",
-       x = "Decade")
-
+       x = "Decade") + 
+  theme_minimal() 
 
 ```
 
+This plot shows the count of emotion-related words found in lyrics across each decade (1950–2010) using the NRC sentiment lexicon. As expected, the total number of emotion-related words increases steadily over the decades, which reflects the growing number of songs in the dataset and the longer lyrics by song in recent decades. With this plot we can analyse the relative prominence and pace of change between emotions.
+
+**Sadness**, **fear**, and **trust** are the most prominent emotional categories and show particularly sharp growth from the 1980s onwards. Their rise suggests that music has become increasingly reflective, vulnerable, and emotionally rich over time. **Anger**, although less frequent than the other emotions in earlier decades, sees a noticeable surge in the 2000s and especially the 2010s, more than doubling in count. This may reflect a cultural climate marked by frustration, protest, or disillusionment.
+
+Interestingly, while the count of words associated with **joy** also increases, its growth is more modest in comparison. By the 2010s, joy appears to be outpaced by sadness, fear, and even trust. This could indicate a relative decline in cheerful or celebratory themes in mainstream music, possibly due to the rise of genres like hip hop, alternative rock, and indie pop that tend to focus more on personal struggle, identity, and existential topics.
+
+However, if we actually want to analyse the emotions by decade independently of the selection bias of our dataset, we have to take a different approach. A more robust tactic is to calculate the mean number of emotion-related words per song within each decade. With this we help control for selection bias and can more reliably make cross-decade comparisons. The goal is to shift the focus from overall volume to lyrical density: how emotionally expressive the average song is in each decade, independent of how many songs were written.
+
 ```{r}
-nrc_joy <- get_sentiments("nrc") |> 
-  filter(sentiment == "joy")
+# sentiment attribution
+nrc_emotions <- lyrics_words %>%
+  inner_join(get_sentiments("nrc")) %>%
+  count(decade, sentiment)
 
-joy_words_by_decade <- lyrics_words %>%
-  inner_join(nrc_joy, by = "word") %>%
-  count(decade, word, sort = TRUE)
+# number of songs per decade
+songs_per_decade <- df %>%
+  group_by(decade) %>%
+  summarise(song_count = n())
 
-joy_words_by_decade |> 
-  group_by(decade) |> 
-  top_n(10, n) |>  
-  ungroup() |> 
-  ggplot(aes(x = reorder_within(word, n, decade), y = n, fill = factor(decade))) +
-  geom_col(show.legend = FALSE) +
-  facet_wrap(~ decade, scales = "free_y") +
-  scale_x_reordered() +
-  coord_flip() +
-  labs(title = "Words associated with 'joy' by decade",
-     x = "Word",
-     y = "Frequency")
+# join + mean per song 
+nrc_emotions_normalised <- nrc_emotions %>%
+  left_join(songs_per_decade, by = "decade") %>%
+  mutate(mean_per_song = n / song_count) %>%
+  filter(sentiment %in% c("anger", "joy", "fear", "trust", "sadness"))
+nrc_emotions_normalised
+
+# Plot
+ggplot(nrc_emotions_normalised, aes(x = decade, y = mean_per_song, fill = sentiment)) +
+  geom_col(position = "dodge") +
+  scale_fill_manual(values = c(
+    "anger" = "#e21818",
+    "fear" = "#976cb6",
+    "sadness" = "#54bbdd",
+    "joy" = "#ffee35",
+    "trust" = "#76dd54"
+  )) +
+  labs(
+    title = "Mean Emotion per Song by Decade (NRC)",
+    y = "Mean Emotion per Song",
+    x = "Decade",
+    fill = "Emotion"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
 ```
 
+By normalising the number of emotion-related words per song, we avoid bias from having more songs in recent decades. The data reveal a more moderate shift in emotional expression over time.
+
+In the 1950s and 60s, lyrics were most commonly associated with **joy** and **trust**, while **anger** and **fear** appeared far less frequently. However, from the 1980s onwards, we observe a steady rise in words related to **sadness**, **fear**, and **anger**. By the 2010s, **sadness** and **fear** have become the most dominant emotional categories per song, with anger also reaching its highest levels since it more than doubled between the 1950s and 2000s.
+
+Although **joy** remains relatively stable across decades, it follows a very different patterns than the other emotions, as it decreases from the 1950s to the 1960s, and then mantains a steady course onward. This implies that while positive sentiment continues to exist in the lyrics, it is increasingly balanced or even overshadowed by more complex and emotionally intense language.
+
+Going back to the methodology, compared to the earlier analysis based on total emotion word counts, this normalised view reveals a more nuanced picture. While the previous plot suggested a steady, almost uniform growth in all emotions, the per-song averages show that emotions like sadness and fear have grown more sharply than others. This could mean that the emotional intensity of the average song has increased, especially for darker or more negative sentiments. Modern lyrics, then, appear not just longer but also more diverse, complex and richer in emotional depth.
+
+Due to the prominent rising of the anger emotion, we take a look at its expression over the decades.
+
 ```{r}
-nrc_anger <- get_sentiments("nrc") |> 
+# sentiment selection 
+nrc_anger <- get_sentiments("nrc") %>% 
   filter(sentiment == "anger")
 
+# sentiment extraction by decade
 anger_words_by_decade <- lyrics_words %>%
   inner_join(nrc_anger, by = "word") %>%
   count(decade, word, sort = TRUE)
 
-anger_words_by_decade |> 
-  group_by(decade) |> 
-  top_n(10, n) |>  
-  ungroup() |> 
+# grouping by decade for table 
+top_anger_words_by_decade <- anger_words_by_decade %>%
+  group_by(decade) %>%
+  slice_max(order_by = n, n = 10) %>%
+  arrange(decade, desc(n)) %>%
+  ungroup()
+
+top_anger_words_by_decade
+
+# plot 
+anger_words_by_decade %>% 
+  group_by(decade) %>% 
+  top_n(10, n) %>%  
+  ungroup() %>% 
   ggplot(aes(x = reorder_within(word, n, decade), y = n, fill = factor(decade))) +
   geom_col(show.legend = FALSE) +
   facet_wrap(~ decade, scales = "free_y") +
@@ -189,126 +461,222 @@ anger_words_by_decade |>
   coord_flip() +
   labs(title = "Words associated with 'anger' by decade",
      x = "Word",
-     y = "Frequency")
+     y = "Frequency") + 
+  theme_minimal()
 ```
 
+The most common anger-related words in earlier decades, like "**lose**," "**lonely**," and "**hurt**," reflect a more emotional and personal tone. By the 1970s and 80s, words such as "**fight**," "**shoot**," and "**hell**" become more frequent, signalling a shift toward more confrontational expressions of anger. In the 1990s and especially the 2010s, explicit terms like "**shit**," "**bitch**," and "**damn**" rise sharply, reflecting the influence of hip-hop and a broader acceptance of raw, unfiltered language in music. This evolution points to a shift from internalised frustration to more direct, aggressive expressions of external anger in modern lyrics.
+
+Let us see how these anger, as well as the other emotions, change in frequency over decades.
+
 ```{r}
-nrc_sadness <- get_sentiments("nrc") |> 
+# FIND EMOTIONS ---------------------------
+# joy -------------------------------------
+# sentiment selection 
+nrc_joy <- get_sentiments("nrc") %>% 
+  filter(sentiment == "joy")
+
+# sentiment extraction by decade
+joy_words_by_decade <- lyrics_words %>%
+  inner_join(nrc_joy, by = "word") %>%
+  count(decade, word, sort = TRUE)
+
+# sentiment extraction (independent of decade)
+top_joy_words <- lyrics_words %>%
+  inner_join(nrc_joy, by = "word") %>%
+  count(word, sort = TRUE) %>% 
+  slice_max(order_by = n, n = 10)
+
+# anger -----------------------------------
+# previous steps already done in chunk before 
+top_anger_words <- lyrics_words %>%
+  inner_join(nrc_anger, by = "word") %>%
+  count(word, sort = TRUE) %>% 
+  slice_max(order_by = n, n = 10)
+
+# sadness ----------------------------------
+nrc_sadness <- get_sentiments("nrc") %>% 
   filter(sentiment == "sadness")
 
 sadness_words_by_decade <- lyrics_words %>%
   inner_join(nrc_sadness, by = "word") %>%
   count(decade, word, sort = TRUE)
 
-sadness_words_by_decade |> 
-  group_by(decade) |> 
-  top_n(10, n) |>  
-  ungroup() |> 
-  ggplot(aes(x = reorder_within(word, n, decade), y = n, fill = factor(decade))) +
-  geom_col(show.legend = FALSE) +
-  facet_wrap(~ decade, scales = "free_y") +
-  scale_x_reordered() +
-  coord_flip() +
-  labs(title = "Words associated with 'sadness' by decade",
-     x = "Word",
-     y = "Frequency")
+top_sadness_words <- lyrics_words %>%
+  inner_join(nrc_sadness, by = "word") %>%
+  count(word, sort = TRUE) %>% 
+  slice_max(order_by = n, n = 10)
+
+# fear --------------------------------------
+nrc_fear <- get_sentiments("nrc") %>% 
+  filter(sentiment == "fear")
+
+fear_words_by_decade <- lyrics_words %>%
+  inner_join(nrc_fear, by = "word") %>%
+  count(decade, word, sort = TRUE)
+
+top_fear_words <- lyrics_words %>%
+  inner_join(nrc_fear, by = "word") %>%
+  count(word, sort = TRUE) %>% 
+  slice_max(order_by = n, n = 10)
+
+# trust -------------------------------------
+nrc_trust <- get_sentiments("nrc") %>% 
+  filter(sentiment == "trust")
+
+trust_words_by_decade <- lyrics_words %>%
+  inner_join(nrc_trust, by = "word") %>%
+  count(decade, word, sort = TRUE)
+
+top_trust_words <- lyrics_words %>%
+  inner_join(nrc_trust, by = "word") %>%
+  count(word, sort = TRUE) %>% 
+  slice_max(order_by = n, n = 10)
+
+# PLOT ---------------------------------------
+# bind top words for all five emotions
+top_emotion_words <- bind_rows(
+  top_joy_words %>% mutate(sentiment = "joy"),
+  top_sadness_words %>% mutate(sentiment = "sadness"),
+  top_anger_words %>% mutate(sentiment = "anger"),
+  top_fear_words %>% mutate(sentiment = "fear"),
+  top_trust_words %>% mutate(sentiment = "trust")
+)
+
+# filter for top emotions  
+top_emotion_counts <- lyrics_words %>%
+  semi_join(top_emotion_words, by = "word") %>%
+  count(decade, word) %>% 
+  # add sentiment labels 
+  left_join(
+    top_emotion_words %>% select(word, sentiment), 
+    by = "word")
+
+# top_emotion_counts # table
+
+# heatmap
+ggplot(top_emotion_counts, aes(x = factor(decade), y = reorder(word, n), fill = n)) +
+  geom_tile(colour = "white") +
+  facet_wrap(~ sentiment, scales = "free_y") +
+  scale_fill_gradient(low = "white", high = "#084594") +
+  labs(
+    title = "Top Emotion-Related Words by Decade",
+    x = "Decade",
+    y = "Word",
+    fill = "Count"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(panel.grid = element_blank())
+
 ```
 
+Taking a look at the heatmap of the most frequent emotionally charged words over time reveals both continuity and change in lyrical expression.
+
+Words like "**baby**," "**sweet**," and "**sing**" (associated with **joy** and **trust**) appear consistently in every decade, pointing to a lasting emotional core in popular music centred around love, tenderness, and musicality.
+
+A couple words like "**lonely**" and "**blue**" under **sadness** show a decreasing trend, in favour of words like "**leave**" and "**lose**," highlighting the enduring nature of heartbreak and isolation as lyrical themes.
+
+On the other hand, terms like "**bitch**," "**shit**," and "**kill**," linked to **anger**, **sadness**, and **fear**, have surged dramatically in recent decades, especially from the 1990s onward. Confirming our previous word count analysis, their rise reflects a shift toward more explicit, raw, and confrontational language.
+
+## Positive and negative sentiment over time
+
+After examining individual emotions and specific words, we now turn to a broader comparison of general sentiment: how the balance between positive and negative language in lyrics has changed over time.
+
 ```{r}
+# ratio calculation
 bing_ratio <- lyrics_words %>%
   inner_join(get_sentiments("bing")) %>%
   count(decade, sentiment) %>%
   pivot_wider(names_from = sentiment, values_from = n, values_fill = 1) %>%
   mutate(ratio = positive / negative)
 
+# table
+bing_ratio
+
+# Plot
 ggplot(bing_ratio, aes(x = decade, y = ratio)) +
+  geom_point(aes(colour = as.factor(decade)), size = 8) + 
+  scale_colour_viridis_d(name = "Decade", option = "C") +
+  scale_y_continuous(limits = c(0, 0.80)) +
+   geom_text(aes(label = round(ratio, 2)), vjust = -1, size = 3.5, colour = "black") +
   geom_line() +
   geom_point() +
-  labs(title = "Positive-to-Negative Ratio per Decade",
-       y = "Ratio (Positive / Negative)")
+  labs(title = "Positive-to-Negative Ratio in song lyrics per Decade",
+       x = "Decade", 
+       y = "Positive / Negative Word Ratio") + 
+  theme_minimal()
 ```
 
+The graph shows a clear and continuous decline in the ratio of positive to negative words from the 1950s to the 2010s. In the 1950s, there were approximately **66 positive** words for every **100 negative words**, but by the 2010s, this had dropped to just **35 positive** words per **100 negatives**. This shift suggests that lyrics have become increasingly dominated by **negative** sentiment over the past 70 years, reinforcing our previous findings about the growing prevalence of sadness, fear, and anger.
+
+Modern songs not only use more emotionally charged language, but they also skew more negative in tone. The consistent drop across each decade suggests this is not due to fluctuations in genre or artist popularity but it actually reflects a deeper, long-term shift in how artists express themselves. Lyrics today are not only longer and richer in vocabulary and emotion, but also more likely to focus on negative emotions than they were in previous generations.
+
+Lets visualise this trend with some wordclouds.
+
 ```{r}
+#| warning: false
 library(wordcloud)
+library(reshape2)
+
 #general
+set.seed(123)
+
+# with tidy ------------------------------------------
 lyrics_words %>%
-  inner_join(get_sentiments("bing")) %>%
-  count(word, sentiment, sort = TRUE) %>%
-  with(wordcloud(word, n, max.words = 100, random.order = FALSE, colors = c("red", "green")))
-```
-
-```{r}
-#by decade
-sentiment_by_decade <- lyrics_words %>%
   inner_join(get_sentiments("bing"), by = "word") %>%
-  count(decade, word, sentiment, sort = TRUE)
+  count(word, sentiment, sort = TRUE) %>%
+  acast(word ~ sentiment, value.var = "n", fill = 0) %>%
+  comparison.cloud(
+    colors = c("#D83842", "#88C564"),
+    max.words = 100, 
+    scale = c(2, 0.3), 
+    random.order = FALSE
+    )
 
-split_data <- split(sentiment_by_decade, sentiment_by_decade$decade)
-
-
-for (dec in names(split_data)) {
-  data <- split_data[[dec]]
-  
-
-  dev.new(width = 8, height = 6)  
-  
-  with(data,
-       wordcloud(words = word,
-                 freq = n,
-                 max.words = 100,
-                 random.order = FALSE,
-                 colors = ifelse(sentiment == "positive", "green", "red"))
-  )
-  title(main = paste("Wordcloud – Decade", dec), line = -1)
-}
-
-```
-
-# Term Frequency
-
-```{r}
-total_words <- lyrics_words %>% 
-  group_by(decade) %>% 
-  summarize(total = sum(n()))
-
-total_words
 ```
 
 ```{r}
-song_words <- left_join(lyrics_words, total_words)
+library(quanteda)
+library(quanteda.textplots)
+
+# TODO 
+# with DFM --------------------------------------------
+# extract sentiments
+sentiment_words <- lyrics_words %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE)
+
+# DFM with counts only once per word, not per decade
+dfm_sent <- sentiment_words %>%
+  mutate(doc = "all_lyrics") %>%
+  cast_dfm(doc, word, n)
+
+# match colours to sentiment
+word_sentiments <- sentiment_words %>%
+  distinct(word, sentiment)
+
+word_colors <- ifelse(word_sentiments$sentiment == "positive", "#88C564", "#D83842")
+
+textplot_wordcloud(dfm_sent,
+                   min_count = 5,
+                   random_order = FALSE,
+                   rotation = .25, 
+                   color = word_colors)
 ```
 
-```{r}
-song_words <- song_words %>%
-  mutate(term_frequency = n()/total)
-```
+The wordcloud visualises the most frequent positive and negative words found in the lyrics, based on the Bing sentiment lexicon.
 
-```{r}
-ggplot(song_words, aes(term_frequency)) +
-  geom_histogram(show.legend = TRUE) 
-```
+We see that negative words such as "**break**," "**fall**," "**lose**," "**shit**," "**fuck**," and "**bitch**" appear prominently for the negative words, reflecting the strong presence of emotional conflict, struggle, and explicit language in modern music. Positive terms are exemplified by "**sweet**," "**love**," "**free**," and "**ready**". However, only "**love**" and "**sweet**" are of considerable size, while the other positive words seem to be generally rather smaller, signifying their less frequent appearances. This echoes what we observed in the positive-to-negative ratio plot.
 
-```{r}
-freq_by_rank <- song_words |> 
-  group_by(decade) |>  
-  mutate(rank = row_number()) %>%
-  ungroup()
-```
+## Conclusion 
 
-```{r}
-freq_by_rank |> 
-  ggplot(aes(rank, term_frequency, color = decade)) + 
-  geom_line(size = 1.1, alpha = 0.8, show.legend = FALSE) + 
-  scale_x_log10() +
-  scale_y_log10()
-```
+Overall, sentiment analysis reveals a clear emotional evolution in lyrics across the decades, with a growing presence of negative sentiment and emotionally intense language in more recent songs, suggesting that contemporary music is increasingly used as a space for expressing inner struggles, social tension, and complex emotions.
 
-lol!!!!!!!!!!
 
 # N-GRAMS
 
 ```{r}
-songs_bigrams <- df |> 
+songs_bigrams <- df %>% 
   unnest_tokens(bigram, lyrics, token = "ngrams", n = 2) %>%
   filter(!is.na(bigram))
 
@@ -318,7 +686,7 @@ songs_bigrams
 We can use count to examine the most frequent bigrams:
 
 ```{r}
-songs_bigrams |> 
+songs_bigrams %>% 
   count(bigram, sort = TRUE)
 ```
 
@@ -334,8 +702,8 @@ bigrams_separated
 ```
 
 ```{r}
-bigrams_filtered <- bigrams_separated |> 
-  filter(!word1 %in% stop_words$word) |> 
+bigrams_filtered <- bigrams_separated %>% 
+  filter(!word1 %in% stop_words$word) %>% 
   filter(!word2 %in% stop_words$word)
 
 bigrams_filtered
@@ -409,16 +777,17 @@ bigram_tf_idf
 ```{r}
 library(widyr)
 
-word_pairs <- lyrics_words  |> 
+word_pairs <- lyrics_words  %>% 
   pairwise_count(word, song_id, sort = TRUE) 
 
-word_pairs_by_decade <- lyrics_words |> 
-  group_by(decade) |> 
-  group_split() |> 
+word_pairs_by_decade <- lyrics_words %>% 
+  group_by(decade) %>% 
+  group_split() %>% 
   map_df(~pairwise_count(.x, word, song_id, sort = TRUE) %>%
            mutate(decade = unique(.x$decade)))
 
 ```
+
 ```{r}
 top_bigrams <- word_pairs_by_decade %>%
   filter(n >= 10) %>%
@@ -447,8 +816,6 @@ ggplot(top_bigrams, aes(bigram, n, fill = decade)) +
   )
 ```
 
-
-
 Use `pairwise_cors` to find correlations between words instead of just co-appearances.
 
 ```{r}
@@ -474,6 +841,7 @@ word_cors %>%
   geom_node_text(aes(label = name), repel = TRUE) +
   theme_void()
 ```
+
 ```{r}
 word_cors_by_decade <- lyrics_words %>%
   group_by(decade) %>%
@@ -496,6 +864,7 @@ word_cors_by_decade %>%
   ggtitle("Word Correlation Network – 2010s")
 
 ```
+
 ```{r}
 word_cors_by_decade %>%
   filter(decade == 1950, correlation > 0.4) %>%
@@ -508,16 +877,15 @@ word_cors_by_decade %>%
   ggtitle("Word Correlation Network – 1950s")
 ```
 
-
 # 
 
 ```{r}
-word_counts <- df |> 
-  unnest_tokens(word, lyrics) |> 
-  anti_join(stop_words) |> 
+word_counts <- df %>% 
+  unnest_tokens(word, lyrics) %>% 
+  anti_join(stop_words) %>% 
   count(decade, word, sort = TRUE)
 
-dtm <- word_counts |> 
+dtm <- word_counts %>% 
   cast_dtm(decade, word, n)
 ```
 
