@@ -53,7 +53,12 @@ library(widyr)        # pairwise word analysis
 library(wordcloud)    # wordclouds
 library(ggraph)       # graph visualisation
 library(igraph)       # network analysis
-
+library(wordcloud)
+library(reshape2)
+library(quanteda)
+library(quanteda.textplots)
+library(forcats)
+library(ggplot2)
 ```
 
 Finally, we load the dataset that we will use.
@@ -820,34 +825,67 @@ df %>%
   ))
 ```
 
-## Moods
+## Moods and themes
 
-Let's now see how much these specific bigrams appear through the decades -\> "love you", "feel good", "get high"
+Beyond general bigram frequencies, we now narrow our focus to a set of curated phrases that reflect dominant themes in music lyrics: love and relationships, partying and escapism, violence, and social awareness. These specific bigrams were chosen due to their commonality in popular music and because they are emotionally and culturally charged. By tracking their use over time, we can observe how the focus of lyrical content has shifted across decades.
+
+To capture these bigrams in their original form, we use the version of the dataset that retains stopwords. As we have explained, we actually do not have a list with the full lyrics', but as we do not know exactly what dictionary has been used to remove words, we will still attempt to make the best out of it.
 
 ```{r}
-#como alguna de estas combinaciones tienen stopwords volvemos a hacer el count que incluye las stop words
-
 bigram_counts_decade <- songs_bigrams %>% 
   count(decade, bigram, sort = TRUE)
 
-selected_bigrams <- c("broken heart", "kiss me", "feel good", #love themes
-                      "get high", "all night", "dance all", #party themes
-                      "kill you", "die young", "pull trigger", #violence
-                      "black lives", "stand up", "the system") #social conscience 
+selected_bigrams <- c(
+  "broken heart", "kiss me", "feel good", #love themes
+  "get high", "all night", "dance all", #party themes
+  "kill you", "die young", "pull trigger", #violence
+  "black lives", "stand up", "wrong system") #social conscience 
 
+# Plot
 bigram_counts_decade %>%
-  filter(bigram %in% selected_bigrams)
+  filter(bigram %in% selected_bigrams) %>%
+  ggplot(aes(x = factor(decade), y = n, fill = bigram)) +
+  geom_col(position = "dodge") +
+  labs(
+    title = "Selected Bigram Frequency by Decade",
+    x = "Decade",
+    y = "Frequency",
+    fill = "Bigram"
+  ) +
+  theme_minimal(base_size = 13)
 ```
 
+The phrase "**feel** **good**" dominates the chart, showing a steady rise from the 1960s onward and with high peack in the 1970s and in the 2010s. Its consistent presence suggests that themes of positivity have remained central to popular music. In contrast, "**get** **high**" and "**pull trigger**", which carry darker and edgier connotations, were virtually absent in the 1950s and 60s, but became noticeably more frequent starting in the 1980s and then later in the 2000s, reflecting the growing integration of drug and violence-related themes into mainstream lyrics. "**Die** **young**" appears much less frequently overall, with scattered usage and no clear upward trend, though its small peak in the 2000s may signal the occasional rise of existential or tragic motifs in pop culture narratives.
+
+Overall, the tall bars for "**feel good**" contrast sharply with the more recent emergence of phrases like "**get high**" and "**pull trigger**", highlighting how lyrical content has shifted from simple feel-good messages to increasingly complex and darker themes overall, which confirms our findings in the sentiment analysis section.
+
+### TF-IDF
+
+After examining our hand-picked bigrams, we now shift to a more systematic approach. TF-IDF helps us identify the most distinctive bigrams in each decade based on their frequency and uniqueness. The goal is to uncover uniquely characteristics of each decade’s lyrical style, trends and themes.
+
 ```{r}
-#not sure if this is useful
 bigram_tf_idf <- bigrams_united %>%
   count(decade, bigram) %>%
   bind_tf_idf(bigram, decade, n) %>%
   arrange(desc(tf_idf))
 
-bigram_tf_idf
+bigram_tf_idf %>%
+  group_by(decade) %>%
+  slice_max(tf_idf, n = 5) %>%
+  ungroup() %>%
+  ggplot(aes(tf_idf, fct_reorder(bigram, tf_idf), fill = decade)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~decade, ncol = 2, scales = "free") +
+  labs(x = "tf-idf", y = NULL)
 ```
+
+The top-scoring bigrams by decade reveal a wide variety of decade-specific expressions, many of which are stylistically unique, repetitive, or culturally embedded. In the 1950s and 60s, we observe a prevalence of nonsensical, playful, or rhythmic phrases like "**zinga** **zinga**", "**putty** **putty**", and "**gong** **gong**".
+
+By the 1970s and 80s, the most distinctive bigrams begin to take a darker turn. Phrases like "**women** **bleed**", "**church** **poison**", and "**mellow** **dead**" suggest an increasing willingness to explore themes of violence, institutional distrust, and existential reflection. This shift likely mirrors both changing musical genres and broader societal transformations during these decades.
+
+From the 1990s to the 2010s, the vocabulary becomes more politically and emotionally charged. Bigram standouts such as "**real** **terrorist**", "**bleed** **control**", "**wicked** **wicked**", and "**preach** **preach**" point to lyrics that engage directly with identity, power, and social critique. Some phrases (like "**bout** **bass**") also reflect the growing influence of hip-hop and electronic genres, where rhythm, slang, and cultural reference play central roles.
+
+The diversity of top bigrams across decades highlights how lyrics evolve not just in vocabulary, but in tone, themes, and cultural references
 
 ## corelating
 
@@ -969,7 +1007,7 @@ dtm <- word_counts %>%
 ```
 
 ```{r}
-# LDA anwenden (z.B. 4 Themen, kannst du anpassen)
+# apply LDA (e.g. 4 topics but you can change it)
 lda_model <- LDA(dtm, k = 4, control = list(seed = 1234))
 ```
 
@@ -977,10 +1015,10 @@ lda_model <- LDA(dtm, k = 4, control = list(seed = 1234))
 library(ggplot2)
 library(tidytext)
 
-# Beta-Tabelle: Wahrscheinlichkeit eines Wortes pro Topic
+# Beta table: Probability of a word per topic
 lda_topics <- tidy(lda_model)
 
-# Top-Wörter je Topic
+# Top words per topic
 top_terms <- lda_topics %>%
   group_by(topic) %>%
   slice_max(beta, n = 10) %>%
@@ -1006,29 +1044,29 @@ top_terms %>%
 ```{r}
 
 
-# 1. Wahrscheinlichkeiten (gamma) für jedes Dokument (Song) extrahieren
+# 1. Extract probabilities (gamma) for each document (song)
 gamma_df <- tidy(lda_model, matrix = "gamma")  # lda_model = dein LDA-Modell
 
-# 2. release_date hinzufügen (damit wir Jahrzehnte analysieren können)
-# Angenommen deine tidy DTM heißt `lyrics_dtm`
-# und du hast eine Spalte `release_date` im Original-Dataframe df
+# 2. add release_date (so we can analyze decades)
+# Assuming your tidy DTM is called `lyrics_dtm`
+# and you have a column `release_date` in the original dataframe df
 
 doc_info <- df %>%
-  mutate(document = row_number(),              # muss zur Reihenfolge im DTM passen!
+  mutate(document = row_number(),              #  must match the sequence in the DTM!
          decade = floor(release_date / 10) * 10) %>%
   select(document, decade)
 
-# 3. Gamma-Werte mit Jahrzehnten verbinden
+# 3. Link gamma values with decades
 gamma_decade <- gamma_df %>%
   mutate(document = as.integer(document)) %>%
   left_join(doc_info, by = "document")
 
-# 4. Durchschnittliche Themenverteilung pro Dekade berechnen
+# 4. Calculate average distribution of topics per decade
 topic_by_decade <- gamma_decade %>%
   group_by(decade, topic) %>%
   summarize(mean_gamma = mean(gamma), .groups = "drop")
 
-# 5. Plot: Thema-Verteilung pro Dekade
+# 5. Plot: Topic distribution per decade
 ggplot(topic_by_decade, aes(x = decade, y = mean_gamma, fill = factor(topic))) +
   geom_col(position = "dodge") +
   labs(title = "Topic Prevalence per Decade",
@@ -1047,12 +1085,12 @@ df <- df %>%
   mutate(song_id = row_number(),
          decade = floor(as.numeric(release_date) / 10) * 10)
 
-# Tokenisierung + Stopwords entfernen
+# tokenization + stopwords
 lyrics_words <- df %>%
   unnest_tokens(word, lyrics) %>%
   anti_join(stop_words)
 
-# DTM mit einem Dokument pro Song
+# DTM with one document per song
 lyrics_dtm <- lyrics_words %>%
   count(song_id, word) %>%
   cast_dtm(song_id, word, n)
