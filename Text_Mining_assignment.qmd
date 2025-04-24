@@ -8,6 +8,8 @@ editor: visual
 
 TODO: rewrite when finished and conclusions
 
+TODO: say something about dataset and source : https://data.mendeley.com/datasets/3t9vbwxgr5/3
+
 In this project, we explore how song lyrics have evolved from 1950 to 2020 using a range of text mining techniques. Our goal is to uncover emotional and thematic trends across decades. We analyze song lyrics from 1950-2020 to see if themes have changed.
 
 We use a dataset of English-language song lyrics and apply three main text analysis techniques:
@@ -668,82 +670,157 @@ The wordcloud visualises the most frequent positive and negative words found in 
 
 We see that negative words such as "**break**," "**fall**," "**lose**," "**shit**," "**fuck**," and "**bitch**" appear prominently for the negative words, reflecting the strong presence of emotional conflict, struggle, and explicit language in modern music. Positive terms are exemplified by "**sweet**," "**love**," "**free**," and "**ready**". However, only "**love**" and "**sweet**" are of considerable size, while the other positive words seem to be generally rather smaller, signifying their less frequent appearances. This echoes what we observed in the positive-to-negative ratio plot.
 
-## Conclusion 
+## Conclusion
 
 Overall, sentiment analysis reveals a clear emotional evolution in lyrics across the decades, with a growing presence of negative sentiment and emotionally intense language in more recent songs, suggesting that contemporary music is increasingly used as a space for expressing inner struggles, social tension, and complex emotions.
 
+Having explored the emotional tone of lyrics thorugh sentiment analysis, we take our analysis now one step further to look at patterns in word pairings.
 
 # N-GRAMS
+
+N-grams allow us to examine not just individual word frequencies, but also how words are used together. To goal is to uncover recurring phrases, expressions, and linguistic patterns in lyrics, revealing themes, styles, and relationships between concepts.
+
+We choose to analyse bi-grams, as they can reflect idiomatic phrases, emotional expressions, or genre-specific language patterns. With count we can examine the most frequent bi-grams.
 
 ```{r}
 songs_bigrams <- df %>% 
   unnest_tokens(bigram, lyrics, token = "ngrams", n = 2) %>%
   filter(!is.na(bigram))
 
-songs_bigrams
-```
+songs_bigrams %>% 
+  select(bigram, decade) %>%
+  sample_n(5)
 
-We can use count to examine the most frequent bigrams:
-
-```{r}
 songs_bigrams %>% 
   count(bigram, sort = TRUE)
 ```
 
-take into account: a lot of repeated words (???) ----\> no se yo que hariais pero yo alomejor intentaria eliminar el hecho de que dos palabras salieran unidas no se
-
-Stopwords:
+Because many of the most frequent bigrams consist of common stopwords, we proceed to clean the bigram data by removing stopwords from both word positions and also create a dataset that counts the bigrams by decade.
 
 ```{r}
 bigrams_separated <- songs_bigrams %>%
   separate(bigram, c("word1", "word2"), sep = " ")
 
-bigrams_separated
-```
-
-```{r}
 bigrams_filtered <- bigrams_separated %>% 
   filter(!word1 %in% stop_words$word) %>% 
   filter(!word2 %in% stop_words$word)
 
-bigrams_filtered
-```
-
-```{r}
-bigrams_united <- bigrams_filtered 
+bigrams_united <- bigrams_filtered %>% 
   unite(bigram, word1, word2, sep = " ")
 
-bigrams_united
-```
-
-## Analysis
-
-```{r}
 bigram_counts_decade <- bigrams_united %>% 
   count(decade, bigram, sort = TRUE)
 
-bigram_counts_decade
 ```
+
+Having prepared our various bigrams datasets, we can now do some analysis.
+
+## Follow up words to Love and Hate
+
+W want to explore conditional n-grams, i.e. how the second word in a phrase depends on the first to better understand how certain emotionally charged words are used in context.
 
 Let's see what is the most repeated word after love in these songs through the decades:
 
 ```{r}
+love_bigrams <- bigrams_filtered %>%
+  filter(word1 == "love") %>%
+  count(decade, word1, word2, sort = TRUE) 
+
+# love_bigrams
+
 bigrams_filtered %>%
   filter(word1 == "love") %>%
-  count(decade, word1, word2, sort = TRUE)
+  count(decade, word2, sort = TRUE) %>%
+  group_by(decade) %>%
+  slice_max(order_by = n, n = 5) %>%
+  ggplot(aes(x = reorder_within(word2, n, decade), y = n, fill = factor(decade))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~decade, scales = "free_y") +
+  scale_x_reordered() +
+  coord_flip() +
+  labs(
+    title = "Top words following 'love' by decade",
+    x = "Following word",
+    y = "Frequency"
+  )
+
 ```
+
+In all decades, the most popular word after "**love**" is "**love**." This might be explained by pop music and chorus with repetitive lyrics, e.g. "love, love, love."
+
+Using quanteda, we can take a quick look at the context of the word love.[^3]
+
+[^3]: If time is available, we highly recomend looking at lyrics with the word "crab" in it. They are incredible. Do not ponder how we stumbled across it.
+
+```{r}
+library(quanteda)
+
+lyrics_corpus <- corpus(df$lyrics, docvars = data.frame(label = df$decade))
+
+kwic(tokens(lyrics_corpus), "love", window = 5)
+
+df %>%
+  slice(666) 
+
+```
+
+For example, on page 11 for the line of \[text666, 41\] we see that the 10 words in which "**love**" sits between are "**heart want love love love**" and "**look eye time realize love**." Taking a look at the specific song we see that it is a 1963 song called "I'm the one who loves you" by "The Impressions," and the specific sentences goes like this:
+
+"Also confess what my **heart** **wants** me to\
+That I'm the one who **loves** you\
+I'm the one who **loves** you\
+A **love** me\
+I'm the one who **loves** you\
+Yes, once more you'll **look** in my **eyes**\
+And one more **time** you won't **realize**\
+That I'm the one who **loves** you"[^4]
+
+[^4]: <https://genius.com/The-impressions-im-the-one-who-loves-you-lyrics>
+
+This is a great example to see how the word "**love**" becomes so overly when conditioned by the previous word "**love**." Through the work of filtering stopwords we see how actually there is quite a lot of context between each love, but yet the stopword filtering reveals the central and undisputable topic of the lyrics: lots of love.
+
+Other interesting words after "**love**" are "**eternally**" (1950s), "**girl**" (1960s), "**mambo**" (1970s), "**fool**" (1980s), "**dead**" and "**woooy**" (1990s), "**savior**" (2000s), "**arm**" and "**crew**" (2010s).
+
+Let's look now at words after "**hate**."
 
 ```{r}
 bigrams_filtered %>%
   filter(word1 == "hate") %>%
-  count(decade, word1, word2, sort = TRUE)
+  count(decade, word2, sort = TRUE) %>%
+  group_by(decade) %>%
+  slice_max(order_by = n, n = 5) %>%
+  ggplot(aes(x = reorder_within(word2, n, decade), y = n, fill = factor(decade))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~decade, scales = "free_y") +
+  scale_x_reordered() +
+  coord_flip() +
+  labs(
+    title = "Top words following 'hate' by decade",
+    x = "Following word",
+    y = "Frequency"
+  )
 ```
 
+The conditional analysis for the word hate strongly reiterates our previous findings. In the 1950s and 60s, "**hate**" is mostly followed by personal or emotional words like "**lose**," "**guess**," or "**hear**", suggesting internal or relational struggles. Notably, "**school**" appears in the 1960s. By the 1970s and 80s, themes broaden slightly, with words like "**bomb**" and "**music**", hinting at more societal or cultural references.
+
+The 1990s see a extremely sharp rise in the repetition of "**hate** **hate**", indicating a more intense tone. In the 2000s and 2010s, the double repetition of "**hate**" continues, accompanied by expressions like "**tear**," "**machine**," "**world**," "**leave**," and "**stop**" show growing existential and emotional complexity.
+
+## Double negation
+
+A key limitation we encountered during our analysis relates to the treatment of negation. For example, while the word "love" is generally classified as positive, its meaning can be retracted when preceded by "not." Hence, the analysis of bigrams with negation words is useful for this problematic.
+
+However, as our analysis progressed we began to suspect that our dataset may have been pre-cleaned. This culminated in this section, where we specifically are unable to find any trace of common negation words such as "no," "never," "not," or "without" in any of the lyrics. This absence strongly suggests that the dataset’s publishers removed stopwords (including negations) prior to publication, which limits our ability to examine how these negations affect sentiment and meaning in context. Sadly, we were not aware of this until this point, as the published did not disclose this information in their dataset description.
+
 ```{r}
-bigrams_separated %>%
-  filter(word1 == "not") %>%
-  count(word1, word2, sort = TRUE)
+# :( 
+df %>%
+  filter(str_detect(
+    str_to_lower(lyrics),
+    "\\bnever\\b|\\bnot\\b|\\bno\\b|\\bwithout\\b"
+  ))
 ```
+
+## Moods
 
 Let's now see how much these specific bigrams appear through the decades -\> "love you", "feel good", "get high"
 
@@ -771,6 +848,8 @@ bigram_tf_idf <- bigrams_united %>%
 
 bigram_tf_idf
 ```
+
+## corelating
 
 -   Use `pairwise_count` to create a dataframe with word pairs co-occurring most often across the script.
 
@@ -877,7 +956,7 @@ word_cors_by_decade %>%
   ggtitle("Word Correlation Network – 1950s")
 ```
 
-# 
+# Topic modeling
 
 ```{r}
 word_counts <- df %>% 
