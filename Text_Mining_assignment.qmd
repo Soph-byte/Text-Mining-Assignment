@@ -1025,6 +1025,12 @@ On the other hand, the 1950s network shows a more cohesive and thematically focu
 
 # Topic modeling
 
+To uncover broader thematic patterns in song lyrics, we turned to topic modelling, a powerful text mining technique that enables us to detect underlying semantic structures in large collections of documents. While earlier analyses focused on surface-level lexical features — such as word frequency, bigrams, or word associations — topic modelling provides a more abstract, yet insightful, lens through which to view the evolution of meaning and content over time.
+
+Specifically, we employed Latent Dirichlet Allocation (LDA), a probabilistic model that assumes each document (in our case, a song or group of songs) is a mixture of multiple topics, and that each topic is itself a distribution over words.
+
+Our first step was to prepare the data. We began by tokenizing the lyrics and removing stopwords to focus only on the meaningful terms. Then, we counted the occurrences of each word per decade, giving us a term frequency distribution that we used to build a Document-Term Matrix (DTM), where each decade represented a document:
+
 ```{r}
 word_counts <- df %>% 
   unnest_tokens(word, lyrics) %>% 
@@ -1034,16 +1040,15 @@ word_counts <- df %>%
 dtm <- word_counts %>% 
   cast_dtm(decade, word, n)
 ```
+We then applied Latent Dirichlet Allocation (LDA). Although we initially experimented with multiple values for k (the number of topics), we found that increasing the number of clusters beyond two led to overly similar and repetitive topics that lacked meaningful separation. After testing various configurations, we determined that two topics (k = 2) provided the most interpretable and distinct division of themes across the corpus:
 
 ```{r}
-# apply LDA (e.g. 4 topics but you can change it)
-lda_model <- LDA(dtm, k = 4, control = list(seed = 1234))
+lda_model <- LDA(dtm, k = 2, control = list(seed = 1234))
 ```
 
-```{r}
-library(ggplot2)
-library(tidytext)
+Next, we extracted the beta values from the model, which represent the probability of each word being associated with each topic. This allowed us to identify the top terms most representative of each topic:
 
+```{r}
 # Beta table: Probability of a word per topic
 lda_topics <- tidy(lda_model)
 
@@ -1054,6 +1059,12 @@ top_terms <- lda_topics %>%
   ungroup() %>%
   arrange(topic, -beta)
 
+top_terms
+```
+
+We visualized these top terms to gain an intuitive understanding of each topic’s content:
+
+```{r}
 # Plot
 top_terms %>%
   mutate(term = reorder_within(term, beta, topic)) %>%
@@ -1066,13 +1077,17 @@ top_terms %>%
     x = "Beta (Word Importance in Topic)",
     y = NULL
   )
-
-
 ```
 
+Topic 1 is dominated by words such as **time**, **yeah**, **live**, **baby**, **heart**, and **feel**, suggesting a focus on personal emotion, relationships, and introspection. This cluster appears to capture the intimate and expressive side of songwriting, maybe reflecting themes of love, inner life, and emotional experience. The presence of colloquial markers like **yeah** and **gonna** further hints at a conversational and informal tone in the lyrics grouped under this theme.
+
+Topic 2, on the other hand, centers around words like **night**, **life**, **break**, **play**, **money**, and **hold**. The inclusion of terms like night and play suggests a connection to nightlife or entertainment, while money and break might indicate ambition, success, or personal struggle. Compared to Topic 1, this cluster seems more outward-facing and grounded in external events or settings.
+
+Overall, the LDA results offer a high-level view of the thematic duality in the lyrics: one topic capturing the emotional and relational aspects of songs, and the other reflecting experiential, material, and performative dimensions. 
+
+However, analyzing topic content alone wasn’t enough — we also wanted to understand how these topics varied in prominence over time. To do that, we extracted the gamma values from the model, which indicate how much each topic contributes to each document (in our case, decade or song). We linked each document back to its release decade to track changes in topic prevalence:
+
 ```{r}
-
-
 # 1. Extract probabilities (gamma) for each document (song)
 gamma_df <- tidy(lda_model, matrix = "gamma")  # lda_model = dein LDA-Modell
 
@@ -1089,12 +1104,20 @@ doc_info <- df %>%
 gamma_decade <- gamma_df %>%
   mutate(document = as.integer(document)) %>%
   left_join(doc_info, by = "document")
+```
 
+We then calculated the average topic proportion for each decade:
+
+```{r}
 # 4. Calculate average distribution of topics per decade
 topic_by_decade <- gamma_decade %>%
   group_by(decade, topic) %>%
   summarize(mean_gamma = mean(gamma), .groups = "drop")
+```
 
+And plotted the temporal evolution of each topic’s prominence:
+
+```{r}
 # 5. Plot: Topic distribution per decade
 ggplot(topic_by_decade, aes(x = decade, y = mean_gamma, fill = factor(topic))) +
   geom_col(position = "dodge") +
@@ -1105,11 +1128,10 @@ ggplot(topic_by_decade, aes(x = decade, y = mean_gamma, fill = factor(topic))) +
   theme_minimal()
 
 ```
+Este plot es el que no tiene sentido voy a intentar arreglarlo y es a partir de aqui donde no entiendo porque se repite todo :(
+
 
 ```{r}
-library(tidytext)
-library(dplyr)
-
 df <- df %>%
   mutate(song_id = row_number(),
          decade = floor(as.numeric(release_date) / 10) * 10)
@@ -1123,15 +1145,12 @@ lyrics_words <- df %>%
 lyrics_dtm <- lyrics_words %>%
   count(song_id, word) %>%
   cast_dtm(song_id, word, n)
-
-
-
 ```
 
-```{r}
-library(topicmodels)
-lyrics_lda <- LDA(lyrics_dtm, k = 4, control = list(seed = 1234))
 
+
+```{r}
+lyrics_lda <- LDA(lyrics_dtm, k = 4, control = list(seed = 1234))
 ```
 
 ```{r}
@@ -1149,6 +1168,18 @@ gamma_df %>%
   geom_col(position = "dodge") +
   labs(title = "Topic Prevalence per Decade",
        x = "Decade", y = "Average Gamma (Topic Proportion)", fill = "Topic")
-
-
 ```
+
+# Conclusion
+
+This project set out to explore how English-language song lyrics have evolved from the 1950s to the 2020s through a combination of text mining techniques. By analyzing emotional tone, linguistic structure, and thematic patterns, we observed a clear and consistent transformation in the content and mood of popular music.
+
+Sentiment analysis revealed a steady shift from the optimism of early decades to a growing presence of negative and emotionally intense language. While joy remained a lyrical constant, emotions such as sadness, fear, and anger became increasingly dominant, particularly in recent decades. This suggests a move toward introspection and emotional complexity in songwriting.
+
+The evolution of language—especially the rise of more aggressive or explicit terms—mirrored broader cultural and stylistic changes, such as the emergence of hip-hop and alternative genres. Bigrams and word networks further highlighted this shift, contrasting the romantic simplicity of earlier lyrics with the commercialism, social critique, and raw expression of modern music.
+
+Topic modelling added a deeper layer to this narrative,( uncovering broader thematic shifts that point to a more diverse and nuanced musical landscape. Today’s lyrics reflect not only personal emotions but also collective concerns, identity, and performance (añadir lo que sea que añadamos con el topipc modelling)
+
+In sum, the data show that song lyrics have not simply changed—they have matured. They are longer, more emotionally charged, more thematically varied, and more engaged with the world around them. Music, as a cultural artifact, continues to echo the times—and those echoes have grown loude and more complex.
+
+
