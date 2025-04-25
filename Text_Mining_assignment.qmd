@@ -8,7 +8,9 @@ editor: visual
 
 TODO: rewrite when finished and conclusions
 
-TODO: say something about dataset and source : https://data.mendeley.com/datasets/3t9vbwxgr5/3
+Data: https://data.mendeley.com/datasets/3t9vbwxgr5/3
+
+The dataset, analyzed in the paper *"Temporal Analysis and Visualisation of Music"*, contains music metadata and lyrics from songs released between 1950 and 2019. It includes features like sadness, danceability, loudness, and acousticness, with lyrics. Audio data was collected using the Echo Nest® API via the Spotipy Python package, while lyrics were retrieved through the Lyrics Genius® API based on song titles and artist names.
 
 In this project, we explore how song lyrics have evolved from 1950 to 2020 using a range of text mining techniques. Our goal is to uncover emotional and thematic trends across decades. We analyze song lyrics from 1950-2020 to see if themes have changed.
 
@@ -130,8 +132,6 @@ df %>%
 
 names(df)
 ```
-
-TODO: another graph, is it worth it?
 
 ```{r}
 # Get top 10 artists by number of songs
@@ -892,6 +892,7 @@ The diversity of top bigrams across decades highlights how lyrics evolve not jus
 Building on our exploration of bi-grams, we wanted to further investigate how words are used together in lyrics—not only as adjacent phrases, but also in terms of broader associative patterns across entire songs. While bi-grams help reveal repeated expressions and fixed structures, co-occurrence and correlation analyses offer a deeper understanding of the conceptual relationships between words. These approaches help us see not just what is said, but how ideas are built and connected throughout a song.
 
 To begin, we used the pairwise_count() function from the widyr package to compute how often two words appear together within the same song. This allows us to move beyond adjacent word pairs and capture thematic links that might not be sequential but still co-exist within the lyrical narrative:
+
 ```{r}
 library(widyr)
 
@@ -944,7 +945,7 @@ ggplot(top_bigrams, aes(bigram, n, fill = decade)) +
 
 This visualization reveals several interesting patterns. In the 1950s and 1960s, bigrams revolving around the word “**heart**” — such as “**heart break**”, “**break heart”**, and “**kiss heart**” — dominate, reflecting the lyrical focus on romantic and emotional themes. As we move into the 1970s and 1980s, we see a shift toward introspection and existential themes, with frequent bigrams like “**time feel**”, “**feel time**” and “**live life**”. These expressions suggest a broader reflection on life, emotions, and personal experiences.
 
-In the  2010s, the nature of lyrical expression seems to evolve significantly. The most common bigrams include phrases like “**lyric commercial**” and “**wanna time**”, indicating not only the rise of meta-lyrical content — lyrics referencing lyrics themselves — but also more colloquial, conversational phrasing. This change could be attributed to the influence of commercial pop culture, hip-hop, and the increasing informality in language use.
+In the 2010s, the nature of lyrical expression seems to evolve significantly. The most common bigrams include phrases like “**lyric commercial**” and “**wanna time**”, indicating not only the rise of meta-lyrical content — lyrics referencing lyrics themselves — but also more colloquial, conversational phrasing. This change could be attributed to the influence of commercial pop culture, hip-hop, and the increasing informality in language use.
 
 While co-occurrence reveals which word pairs are frequent, it does not necessarily indicate a meaningful or strong connection between them. To go one step further, we computed pairwise correlations using pairwise_cor(), which measures how often two words appear in the same songs relative to their individual frequencies. We calculated word correlations based on shared song IDs, filtering for words that appeared at least 20 times to ensure reliability:
 
@@ -1017,9 +1018,10 @@ word_cors_by_decade |>
   ggtitle("Word Correlation Network – 1950s")
 
 ```
+
 On one hand, the network for the 2010s reveals several distinct and tightly knit clusters, reflecting a noticeable shift toward more explicit and conversational language. Words such as “**fuck**”, “**shit**”, “**bitch**” and “**nigga**” form a densely connected group, indicating the strong presence of profane and direct expressions. Additionally, terms like “**remix**”, “**feat**” and “weeknd” highlight a more self-aware and commercial dimension of music in this decade, where artists frequently reference the music industry, collaboration, and celebrity culture within their lyrics.
 
-Alongside these clusters of explicit language and cultural references, there are smaller groupings of non-lexical vocalizations such as “**lalalala**” or “**mymy**” pointing to a performative use of sound and rhythm beyond semantic meaning. 
+Alongside these clusters of explicit language and cultural references, there are smaller groupings of non-lexical vocalizations such as “**lalalala**” or “**mymy**” pointing to a performative use of sound and rhythm beyond semantic meaning.
 
 On the other hand, the 1950s network shows a more cohesive and thematically focused structure. Prominent clusters include words related to sentimentality and romance, such as “**tenderness**”, “**simple**” and “**sentimental**”, which aligns with the emotional tone prevalent in mid-century ballads. Playful, sound-based terms like “**ding**”, “**dong**” and “**whistle**” also appear, reflecting an interest in phonetic play and melodic embellishments typical of early rock 'n’ roll. Interestingly, words like “**fuck**”, “**bitch**” or "**nigga**" do appear in the 1950s network, possibly hinting at the presence of fringe or subversive lyrical content even during a more culturally conservative era.
 
@@ -1040,6 +1042,7 @@ word_counts <- df %>%
 dtm <- word_counts %>% 
   cast_dtm(decade, word, n)
 ```
+
 We then applied Latent Dirichlet Allocation (LDA). Although we initially experimented with multiple values for k (the number of topics), we found that increasing the number of clusters beyond two led to overly similar and repetitive topics that lacked meaningful separation. After testing various configurations, we determined that two topics (k = 2) provided the most interpretable and distinct division of themes across the corpus:
 
 ```{r}
@@ -1083,7 +1086,7 @@ Topic 1 is dominated by words such as **time**, **yeah**, **live**, **baby**, **
 
 Topic 2, on the other hand, centers around words like **night**, **life**, **break**, **play**, **money**, and **hold**. The inclusion of terms like night and play suggests a connection to nightlife or entertainment, while money and break might indicate ambition, success, or personal struggle. Compared to Topic 1, this cluster seems more outward-facing and grounded in external events or settings.
 
-Overall, the LDA results offer a high-level view of the thematic duality in the lyrics: one topic capturing the emotional and relational aspects of songs, and the other reflecting experiential, material, and performative dimensions. 
+Overall, the LDA results offer a high-level view of the thematic duality in the lyrics: one topic capturing the emotional and relational aspects of songs, and the other reflecting experiential, material, and performative dimensions.
 
 However, analyzing topic content alone wasn’t enough — we also wanted to understand how these topics varied in prominence over time. To do that, we extracted the gamma values from the model, which indicate how much each topic contributes to each document (in our case, decade or song). We linked each document back to its release decade to track changes in topic prevalence:
 
@@ -1145,8 +1148,6 @@ lyrics_dtm <- lyrics_words %>%
   cast_dtm(song_id, word, n)
 ```
 
-
-
 ```{r}
 lyrics_lda <- LDA(lyrics_dtm, k = 2, control = list(seed = 1234))
 ```
@@ -1179,5 +1180,3 @@ The evolution of language—especially the rise of more aggressive or explicit t
 Topic modelling added a deeper layer to this narrative,( uncovering broader thematic shifts that point to a more diverse and nuanced musical landscape. Today’s lyrics reflect not only personal emotions but also collective concerns, identity, and performance (añadir lo que sea que añadamos con el topipc modelling)
 
 In sum, the data show that song lyrics have not simply changed—they have matured. They are longer, more emotionally charged, more thematically varied, and more engaged with the world around them. Music, as a cultural artifact, continues to echo the times—and those echoes have grown loude and more complex.
-
-
