@@ -141,3 +141,42 @@ freq_by_rank %>%
   scale_x_log10() +
   scale_y_log10()
 ```
+
+# LDA general 
+
+```{r}
+df <- df %>%
+  mutate(song_id = row_number(),
+         decade = floor(as.numeric(release_date) / 10) * 10)
+
+# tokenization + stopwords
+lyrics_words <- df %>%
+  unnest_tokens(word, lyrics) %>%
+  anti_join(stop_words)
+
+# DTM with one document per song
+lyrics_dtm <- lyrics_words %>%
+  count(song_id, word) %>%
+  cast_dtm(song_id, word, n)
+```
+
+```{r}
+lyrics_lda <- LDA(lyrics_dtm, k = 2, control = list(seed = 1234))
+```
+
+```{r}
+gamma_df <- tidy(lyrics_lda, matrix = "gamma") %>%
+  mutate(song_id = as.integer(document)) %>%
+  left_join(df %>% select(song_id, decade), by = "song_id")
+
+```
+
+```{r}
+gamma_df %>%
+  group_by(decade, topic) %>%
+  summarise(avg_gamma = mean(gamma)) %>%
+  ggplot(aes(x = decade, y = avg_gamma, fill = as.factor(topic))) +
+  geom_col(position = "dodge") +
+  labs(title = "Topic Prevalence per Decade",
+       x = "Decade", y = "Average Gamma (Topic Proportion)", fill = "Topic")
+```
