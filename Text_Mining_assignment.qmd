@@ -8,7 +8,8 @@ editor: visual
 
 This project explores how the content of English-language song lyrics has evolved from the 1950s to the 2010s, with a particular focus on emotional tone, recurring phrases, and underlying themes. Using a range of text mining techniques, we aim to uncover patterns and shifts in how artists express themselves lyrically. The goal is to see whether the language of popular music has changed, and if so, how.
 
-Our analysis is based on a dataset of song lyrics compiled by Maura et al. (2020), which contains metadata and full lyrics for songs released between 1950 and 2019. The full dataset is openly available at [Mendeley Data](https://data.mendeley.com/datasets/3t9vbwxgr5/3).
+
+Our analysis is based on a dataset of song lyrics compiled by Maura et al. (2020), which contains music metadata and lyrics for songs released between 1950 and 2019. The full dataset is openly available at [Mendeley Data](https://data.mendeley.com/datasets/3t9vbwxgr5/3).
 
 We apply multiple main text analysis techniques:
 
@@ -129,8 +130,6 @@ df %>%
 
 names(df)
 ```
-
-TODO: another graph, is it worth it?
 
 ```{r}
 # Get top 10 artists by number of songs
@@ -1044,6 +1043,7 @@ dtm <- word_counts %>%
   cast_dtm(decade, word, n)
 ```
 
+
 We then applied Latent Dirichlet Allocation (LDA).
 
 ## Topics by individual decades (k = 7)
@@ -1176,11 +1176,14 @@ ggplot(topic_by_decade, aes(x = decade, y = mean_gamma, fill = factor(topic))) +
   theme_minimal()
 ```
 
+
 This plot shows how the two topics identified by the LDA model vary in prevalence across decades, based on the average gamma values.
 
 The plot of topic prevalence by decade shows a clear and consistent increase in Topic 1 over time. Topic 1, as previously discussed, is characterised by words like "**yeah**," "**baby**," "**feel**," "**gonna**," and "**heart**," all of which suggest lyrics that are emotionally expressive, relational, and often informal or conversational in tone. The increasing weight of this topic from the 1960s onwards, and its clear dominance by the 2010s (accounting for around 60% of topic representation), suggests that contemporary music lyrics have become more centred around inner emotional states, intimacy, and casual self-expression.
 
 By contrast, Topic 2, which includes words such as "**night**," "**break**," "**money**," "**play**," and "**hold**," appears to capture a more external, performative, or experiential dimension. This topic dominated the 1950s and remained fairly balanced in the 1960s and 70s, but has declined steadily ever since. By the 2010s, its contribution dropped below 40%, reflecting a diminishing presence of these themes in the lyrics over time.
+
+
 
 Taken together, these results suggest a shift in lyrical focus across decades: from a more outward-facing, situational or performative style (Topic 2) in the earlier decades, toward a more inward-looking, emotionally charged, and conversational style (Topic 1) in more recent decades. This aligns with broader trends in music and pop culture, where personal storytelling and emotional authenticity have become increasingly central. erhaps this shift also helps explain the growing presence of emotions like anger, sadness, and fear in lyrics, as artists not only express love but also explore more diverse and vulnerable aspects of the human experience.
 
@@ -1194,8 +1197,10 @@ Sentiment analysis revealed a steady shift from the optimism of early decades to
 
 Topic modelling further deepened this picture by identifying two main thematic clusters across the corpus: one centred on emotion, intimacy, and personal experience, and another on external action, entertainment, and material themes. Over time, the prevalence of the inward-looking topic grew, suggesting that songs have increasingly become vehicles for personal storytelling and emotional self-expression. This shift may also help explain the rise in darker emotional tones—as artists move beyond traditional themes like love to engage more honestly with pain, conflict, and identity.
 
+
 In conclusion, our analyses show that lyrics have not only changed, they seem to have matured. They are longer, more emotionally diverse, more thematically nuanced, and more reflective of both personal and societal complexity. Music, as a cultural artifact, continues to echo the times—and those echoes have grown louder, more varied, and seemingly, more human.
 
 # Sources 
 
 Moura, Luan; Fontelles, Emanuel; Sampaio, Vinicius; França, Mardônio (2020), “Music Dataset: Lyrics and Metadata from 1950 to 2019”, Mendeley Data, V3, doi: 10.17632/3t9vbwxgr5.3
+
