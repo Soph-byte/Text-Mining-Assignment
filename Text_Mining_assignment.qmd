@@ -887,45 +887,54 @@ From the 1990s to the 2010s, the vocabulary becomes more politically and emotion
 
 The diversity of top bigrams across decades highlights how lyrics evolve not just in vocabulary, but in tone, themes, and cultural references
 
-## corelating
+## Correlating
 
--   Use `pairwise_count` to create a dataframe with word pairs co-occurring most often across the script.
+Building on our exploration of bi-grams, we wanted to further investigate how words are used together in lyrics—not only as adjacent phrases, but also in terms of broader associative patterns across entire songs. While bi-grams help reveal repeated expressions and fixed structures, co-occurrence and correlation analyses offer a deeper understanding of the conceptual relationships between words. These approaches help us see not just what is said, but how ideas are built and connected throughout a song.
 
+To begin, we used the pairwise_count() function from the widyr package to compute how often two words appear together within the same song. This allows us to move beyond adjacent word pairs and capture thematic links that might not be sequential but still co-exist within the lyrical narrative:
 ```{r}
 library(widyr)
 
-word_pairs <- lyrics_words  %>% 
-  pairwise_count(word, song_id, sort = TRUE) 
-
-word_pairs_by_decade <- lyrics_words %>% 
-  group_by(decade) %>% 
-  group_split() %>% 
-  map_df(~pairwise_count(.x, word, song_id, sort = TRUE) %>%
-           mutate(decade = unique(.x$decade)))
-
+word_pairs <- lyrics_words  |>  
+  pairwise_count(word, song_id, sort = TRUE)
 ```
 
-```{r}
-top_bigrams <- word_pairs_by_decade %>%
-  filter(n >= 10) %>%
-  group_by(decade) %>%
-  slice_max(order_by = n, n = 20) %>%
-  ungroup() %>%
-  mutate(bigram = paste(item1, item2))  # Crear columna de texto combinada
+However, since our analysis is focused on change over time, we wanted to examine how these word relationships vary by decade. We grouped the lyrics by decade and applied the same co-occurrence method to each group:
 
-# Ordenar por frecuencia dentro de cada faceta
-top_bigrams <- top_bigrams %>%
-  group_by(decade) %>%
-  mutate(bigram = reorder_within(bigram, n, decade)) %>%
+```{r}
+word_pairs_by_decade <- lyrics_words |> 
+  group_by(decade) |>  
+  group_split() |>  
+  map_df(~pairwise_count(.x, word, song_id, sort = TRUE) |> 
+           mutate(decade = unique(.x$decade)))
+
+word_pairs_by_decade
+```
+
+This gave us a decade-by-decade view of which word pairs were most commonly used together. We filtered the results to include only pairs that appeared at least ten times and selected the top 20 for each decade. These were visualised in a faceted bar chart, highlighting the most prominent co-occurring word combinations and their evolution:
+
+```{r, fig.height= 13}
+
+top_bigrams <- word_pairs_by_decade |> 
+  filter(n >= 10) |> 
+  group_by(decade) |> 
+  slice_max(order_by = n, n = 20) |> 
+  ungroup() |> 
+  mutate(bigram = paste(item1, item2))  
+
+
+top_bigrams <- top_bigrams |> 
+  group_by(decade) |> 
+  mutate(bigram = reorder_within(bigram, n, decade)) |> 
   ungroup()
 
-# Gráfico de barras facetado
+
 ggplot(top_bigrams, aes(bigram, n, fill = decade)) +
   geom_col(show.legend = FALSE) +
   scale_x_reordered() +
   coord_flip() +
   facet_wrap(~decade, scales = "free_y") +
-  theme_minimal(base_size = 12) +
+  theme_minimal(base_size = 20) +
   labs(
     title = "Top 20 Word Pairs by Decade",
     x = "Bigram (word pair)",
@@ -933,7 +942,11 @@ ggplot(top_bigrams, aes(bigram, n, fill = decade)) +
   )
 ```
 
-Use `pairwise_cors` to find correlations between words instead of just co-appearances.
+This visualization reveals several interesting patterns. In the 1950s and 1960s, bigrams revolving around the word “**heart**” — such as “**heart break**”, “**break heart”**, and “**kiss heart**” — dominate, reflecting the lyrical focus on romantic and emotional themes. As we move into the 1970s and 1980s, we see a shift toward introspection and existential themes, with frequent bigrams like “**time feel**”, “**feel time**” and “**live life**”. These expressions suggest a broader reflection on life, emotions, and personal experiences.
+
+In the  2010s, the nature of lyrical expression seems to evolve significantly. The most common bigrams include phrases like “**lyric commercial**” and “**wanna time**”, indicating not only the rise of meta-lyrical content — lyrics referencing lyrics themselves — but also more colloquial, conversational phrasing. This change could be attributed to the influence of commercial pop culture, hip-hop, and the increasing informality in language use.
+
+While co-occurrence reveals which word pairs are frequent, it does not necessarily indicate a meaningful or strong connection between them. To go one step further, we computed pairwise correlations using pairwise_cor(), which measures how often two words appear in the same songs relative to their individual frequencies. We calculated word correlations based on shared song IDs, filtering for words that appeared at least 20 times to ensure reliability:
 
 ```{r}
 word_cors <- lyrics_words %>%
@@ -944,14 +957,14 @@ word_cors <- lyrics_words %>%
 word_cors
 ```
 
--   Create a graph with word correlations using `ggraph`.
+We then visualized strong correlations (greater than 0.4) using a correlation network:
 
 ```{r}
 set.seed(2016)
 
-word_cors %>%
-  filter(correlation > 0.4) %>%
-  graph_from_data_frame() %>%
+word_cors |> 
+  filter(correlation > 0.4) |> 
+  graph_from_data_frame() |> 
   ggraph(layout = "fr") +
   geom_edge_link(aes(edge_alpha = correlation), show.legend = FALSE) +
   geom_node_point(color = "lightblue", size = 5) +
@@ -959,20 +972,28 @@ word_cors %>%
   theme_void()
 ```
 
+This network plot reveals clusters of words that are semantically or thematically related. For instance, we observe nodes of emotional expressions, genre-specific terms, and even playful or non-standard phonetic sounds like "dingdongding" or "shooby," likely linked to jazz, soul, or novelty songs. The structure of this network highlights how certain words consistently co-occur across various songs, pointing to recurring motifs or lexical choices that characterize particular styles or genres.
+
+Then, to maintain our focus on temporal variation, we repeated the correlation analysis by decade. We grouped the lyrics accordingly and computed the correlations for each group separately:
+
 ```{r}
-word_cors_by_decade <- lyrics_words %>%
-  group_by(decade) %>%
-  group_split() %>%
-  map_df(~ .x %>%
-           group_by(word) %>%
-           filter(n() >= 20) %>%
-           pairwise_cor(word, song_id, sort = TRUE) %>%
+word_cors_by_decade <- lyrics_words |> 
+  group_by(decade) |> 
+  group_split() |> 
+  map_df(~ .x |> 
+           group_by(word) |> 
+           filter(n() >= 20) |> 
+           pairwise_cor(word, song_id, sort = TRUE) |> 
            mutate(decade = unique(.x$decade))
   )
+```
 
-word_cors_by_decade %>%
-  filter(decade == 2010, correlation > 0.4) %>%
-  graph_from_data_frame() %>%
+This allowed us to create separate word networks for different decades, helping us trace how word associations and thematic clusters have evolved. For example, the following graph illustrates the strongest correlations in the lyrics of the 2010s:
+
+```{r}
+word_cors_by_decade |> 
+  filter(decade == 2010, correlation > 0.4) |> 
+  graph_from_data_frame() |> 
   ggraph(layout = "fr") +
   geom_edge_link(aes(edge_alpha = correlation), show.legend = FALSE) +
   geom_node_point(color = "lightblue", size = 5) +
@@ -982,17 +1003,25 @@ word_cors_by_decade %>%
 
 ```
 
+By contrast, this is the same graph for the 1950s:
+
 ```{r}
-word_cors_by_decade %>%
-  filter(decade == 1950, correlation > 0.4) %>%
-  graph_from_data_frame() %>%
+word_cors_by_decade |> 
+  filter(decade == 1950, correlation > 0.4) |> 
+  graph_from_data_frame() |> 
   ggraph(layout = "fr") +
   geom_edge_link(aes(edge_alpha = correlation), show.legend = FALSE) +
   geom_node_point(color = "lightblue", size = 5) +
   geom_node_text(aes(label = name), repel = TRUE) +
   theme_void() +
   ggtitle("Word Correlation Network – 1950s")
+
 ```
+On one hand, the network for the 2010s reveals several distinct and tightly knit clusters, reflecting a noticeable shift toward more explicit and conversational language. Words such as “**fuck**”, “**shit**”, “**bitch**” and “**nigga**” form a densely connected group, indicating the strong presence of profane and direct expressions. Additionally, terms like “**remix**”, “**feat**” and “weeknd” highlight a more self-aware and commercial dimension of music in this decade, where artists frequently reference the music industry, collaboration, and celebrity culture within their lyrics.
+
+Alongside these clusters of explicit language and cultural references, there are smaller groupings of non-lexical vocalizations such as “**lalalala**” or “**mymy**” pointing to a performative use of sound and rhythm beyond semantic meaning. 
+
+On the other hand, the 1950s network shows a more cohesive and thematically focused structure. Prominent clusters include words related to sentimentality and romance, such as “**tenderness**”, “**simple**” and “**sentimental**”, which aligns with the emotional tone prevalent in mid-century ballads. Playful, sound-based terms like “**ding**”, “**dong**” and “**whistle**” also appear, reflecting an interest in phonetic play and melodic embellishments typical of early rock 'n’ roll. Interestingly, words like “**fuck**”, “**bitch**” or "**nigga**" do appear in the 1950s network, possibly hinting at the presence of fringe or subversive lyrical content even during a more culturally conservative era.
 
 # Topic modeling
 
