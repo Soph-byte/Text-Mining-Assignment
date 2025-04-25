@@ -1128,8 +1128,6 @@ ggplot(topic_by_decade, aes(x = decade, y = mean_gamma, fill = factor(topic))) +
   theme_minimal()
 
 ```
-Este plot es el que no tiene sentido voy a intentar arreglarlo y es a partir de aqui donde no entiendo porque se repite todo :(
-
 
 ```{r}
 df <- df %>%
@@ -1150,7 +1148,7 @@ lyrics_dtm <- lyrics_words %>%
 
 
 ```{r}
-lyrics_lda <- LDA(lyrics_dtm, k = 4, control = list(seed = 1234))
+lyrics_lda <- LDA(lyrics_dtm, k = 2, control = list(seed = 1234))
 ```
 
 ```{r}
