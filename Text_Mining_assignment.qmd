@@ -151,22 +151,13 @@ top_artists <- df %>%
 df_top_artists <- df %>% 
   filter(artist_name %in% top_artists)
 
-# Plot: number of songs per year per artist
-ggplot(df_top_artists, aes(x = release_date)) +
-  geom_bar(fill = "steelblue") +
-  facet_wrap(~ fct_reorder(artist_name, release_date, .fun = min), scales = "free_y") +
-  labs(title = "Song Release Distribution of Top 9 Artists",
-       x = "Year", y = "Number of Songs") +
-  theme_minimal()
-
-# TODO: WITH COLOUR? 
 # Filter and summarise data by year
 df_top_artists_years <- df %>%
   filter(artist_name %in% top_artists) %>%
   group_by(artist_name, release_date) %>%
   summarise(songs = n(), .groups = "drop")
 
-# Plot: now fill works because we summarised by release year
+# Plot: number of songs per year per artist
 ggplot(df_top_artists_years, aes(x = release_date, y = songs, fill = release_date)) +
   geom_col() +
   facet_wrap(~ fct_reorder(artist_name, release_date, .fun = min), scales = "free_y") +
@@ -178,7 +169,6 @@ ggplot(df_top_artists_years, aes(x = release_date, y = songs, fill = release_dat
   ) +
   theme_minimal() +
   theme(legend.position = "bottom")
-```
 
 The artists with the most entries are icons like Johnny Cash, Ella Fitzgerald, and Dean Martin. These figures indicate a strong representation of classic country, jazz, and pop artists, likely shaping the lyrical content of earlier decades. There are a few likely reasons why older artists dominate this list. We believe it could be because they have had more time to put songs out. For example, Dolly Parton is still putting music out, yet started in 1967 with her album "Hello, I'm Dolly." The older artists might have also had higher prolific output, as many classic artists had long productive careers with hundres of songs. In comparison, a raper from the 2010s might just be starting to put as many songs out. And since not all become very famous or repected, they might also not be represented in this list. Hence, we also could be dealing with a certain curation bias for established songs. It is very important to appreciate this potential bias, as it may shape the kinds of themes, emotional tones, and language that dominate the lyrics if we were to analyse them without any further distinction.
 
