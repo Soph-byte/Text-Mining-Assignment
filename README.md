@@ -1,6 +1,8 @@
 # Text Mining Assignment
 Authors: Irene Bosque, Mafalda González, Sophie Kersten
+
 Course: Text Mining
+
 Date: April 25, 2025
 
 ## Project Overview
